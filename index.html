@@ -20,6 +20,7 @@
   #btn:active{transform:translateY(.6cqh);box-shadow:0 .2cqh 0 #b36b00}
   #btn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #fire{position:absolute;right:3cqw;bottom:6cqh;width:15cqh;height:15cqh;border-radius:50%;border:0;background:radial-gradient(#7ff,#09a);color:#012;font:800 3.4cqh system-ui;box-shadow:0 .8cqh 0 #056,0 0 3cqh #0cf8;opacity:.8;touch-action:none}
+  #swap{position:absolute;right:21cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#ffd23f;color:#2b1700;font:800 2.6cqh system-ui;box-shadow:0 .6cqh 0 #b36b00;opacity:.85;touch-action:none}
   #fire:active{transform:translateY(.6cqh)}
   #keys{font-size:3.2cqh;opacity:.6}
 </style>
@@ -29,6 +30,7 @@
   <div id="stage">
     <canvas id="game" width="900" height="420"></canvas>
     <button id="fire" aria-label="Fire">FIRE</button>
+    <button id="swap" aria-label="Switch weapon">SWAP</button>
     <div id="overlay">
       <canvas id="wheel" width="560" height="560"></canvas>
       <div id="panel">
@@ -36,7 +38,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <button id="btn">SPIN</button>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; F / X = shoot &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE button</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-4 = switch weapon &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
   </div>
@@ -89,6 +91,15 @@ let level = LEVELS[0], levelIdx = 0;
 let best = 0;
 try { best = +localStorage.getItem('wheelrunner.best') || 0; } catch (e) {}
 
+// weapons: the gun is ranged and uses ammo; the rest are melee swings with a reach and a height band above the feet
+const WEAPONS = [
+  {id:'gun',   name:'Blaster', icon:'🔫'},
+  {id:'sword', name:'Sword',   icon:'🗡️', range:80,  band:[10, 80], dur:10, cd:24, dmg:2, breaks:true},
+  {id:'stick', name:'Stick',   icon:'🦯', range:58,  band:[0, 38],  dur:7,  cd:11, dmg:1},
+  {id:'chain', name:'Chain',   icon:'⛓️', range:150, band:[6, 72],  dur:16, cd:34, dmg:1},
+];
+const SOFT = new Set(['crate', 'barrel', 'log', 'cactus', 'cane', 'coral']);   // the sword can chop these
+let weapon = 0, atkId = 0, toast = 0;
 let bullets, ammo, ammoT, fireCD;
 const MAX_AMMO = 6, AMMO_REGEN = 55;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
@@ -96,7 +107,7 @@ const keys = {down:false};
 let touchDown = false;
 
 function resetGame() {
-  player = {x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
+  player = {atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
   obstacles = []; particles = []; bullets = []; ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
@@ -196,8 +207,20 @@ function jump() {
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
   }
 }
+function setWeapon(i) { if (i === weapon) return; weapon = i; player.atk = null; toast = 70; beep(520, .05, 'triangle', .05); }
+function attack() {
+  if (state !== 'play' || player.dead || fireCD > 0) return;
+  if (weapon === 0) return shoot();
+  const w = WEAPONS[weapon];
+  fireCD = w.cd; player.atk = {w, t:0, id:++atkId};
+  beep(w.id === 'chain' ? 160 : 260, .09, 'sawtooth', .04, 220);
+}
+function killEnemy(o) {
+  o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(MAX_AMMO, ammo + 1);
+  dust(o.x + o.w / 2, o.y - o.h / 2, 14, 'rgba(255,230,120,.95)'); beep(240, .14, 'sawtooth', .05, 200);
+}
 function shoot() {
-  if (state !== 'play' || player.dead || ammo <= 0 || fireCD > 0) return;
+  if (ammo <= 0) { beep(120, .05, 'square', .03); return; }
   ammo--; fireCD = 10; player.flash = 6;
   const low = player.sliding && player.onGround;
   bullets.push({x:player.x + 32, px:player.x + 32, y:player.y - (low ? 14 : 38), vx:15});
@@ -213,7 +236,9 @@ addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown','Enter'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { state === 'play' ? jump() : primary(); }
-  else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') shoot();
+  else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') attack();
+  else if (e.code === 'KeyQ') setWeapon((weapon + 1) % WEAPONS.length);
+  else if (/^Digit[1-4]$/.test(e.code)) setWeapon(+e.code.slice(5) - 1);
   else if (e.code === 'Enter') primary();
   else if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
 });
@@ -229,7 +254,8 @@ cv.addEventListener('pointerdown', e => {
 addEventListener('pointerup', () => touchDown = false);
 addEventListener('pointercancel', () => touchDown = false);
 const $fire = document.getElementById('fire');
-$fire.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); shoot(); });
+$fire.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); attack(); });
+document.getElementById('swap').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setWeapon((weapon + 1) % WEAPONS.length); });
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
 
@@ -322,12 +348,28 @@ function update(dt) {
       b.gone = true;
       if (isEnemy(o)) {
         o.hp = (o.hp ?? 1) - 1;
-        if (o.hp <= 0) {
-          o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(MAX_AMMO, ammo + 1);
-          dust(o.x + o.w / 2, o.y - o.h / 2, 14, 'rgba(255,230,120,.95)'); beep(240, .14, 'sawtooth', .05, 200);
-        } else beep(500, .05, 'square', .04);
+        if (o.hp <= 0) killEnemy(o); else beep(500, .05, 'square', .04);
       } else { dust(b.x, b.y, 4, 'rgba(160,240,255,.9)'); beep(180, .04, 'square', .03); }
       break;
+    }
+  }
+  const a = p.atk;
+  if (a) {
+    a.t += dt;
+    if (a.t > a.w.dur) p.atk = null;
+    else {
+      const w = a.w, q = a.t / w.dur, reach = w.id === 'chain' ? w.range * Math.min(1, q * 3) : w.range;
+      const zx0 = p.x + 8, zx1 = p.x + 8 + reach, zy0 = p.y - w.band[1], zy1 = p.y - w.band[0];
+      for (const o of obstacles) {
+        if (o.dead || (o.hitBy === a.id)) continue;
+        if (o.x + o.w - 3 < zx0 || o.x + 3 > zx1 || o.y < zy0 || o.y - o.h > zy1) continue;
+        if (isEnemy(o)) {
+          o.hp = (o.hp ?? 1) - w.dmg;
+          if (o.hp <= 0) killEnemy(o); else { o.hitBy = a.id; dust(o.x, o.y - o.h / 2, 5, 'rgba(255,255,255,.9)'); beep(500, .05, 'square', .04); }
+        } else if (w.breaks && SOFT.has(o.kind)) {
+          o.dead = true; scoreAcc += 20 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 12, 'rgba(190,140,80,.95)'); beep(150, .1, 'sawtooth', .05, -50);
+        }
+      }
     }
   }
   bullets = bullets.filter(b => !b.gone && b.x < W + 40);
@@ -599,10 +641,38 @@ function drawPlayer(p) {
     ctx.fillStyle = '#19d3ff'; ctx.fillRect(gx + 17, gy - 3, 5, 6);
     if (p.flash > 0) { ctx.fillStyle = 'rgba(180,250,255,.9)'; ctx.beginPath(); ctx.arc(gx + 26, gy, 6 + p.flash, 0, 7); ctx.fill(); }
   };
+  const held = (gx, gy) => {
+    const w = WEAPONS[weapon], at = p.atk;
+    if (w.id === 'gun') return gun(gx, gy);
+    const q = at ? Math.min(1, at.t / w.dur) : -1;
+    if (w.id === 'sword' || w.id === 'stick') {
+      const sw = w.id === 'sword';
+      const ang = q < 0 ? (sw ? -1.15 : -1.0) : (sw ? -1.8 : -1.2) + q * (sw ? 2.4 : 2.2);
+      const len = q < 0 ? (sw ? 36 : 34) : (sw ? 78 : 56);
+      const ex = gx + Math.cos(ang) * len, ey = gy + Math.sin(ang) * len;
+      if (q >= 0) { ctx.strokeStyle = sw ? 'rgba(200,245,255,.55)' : 'rgba(255,230,160,.45)'; ctx.lineWidth = 9; ctx.lineCap = 'butt'; ctx.beginPath(); ctx.arc(gx, gy, len * .8, ang - 1.0, ang); ctx.stroke(); ctx.lineCap = 'round'; }
+      if (sw) {
+        limb(gx, gy, ex, ey, '#e6eefa', 5);
+        const hx = gx + Math.cos(ang) * 9, hy = gy + Math.sin(ang) * 9;
+        limb(gx - Math.cos(ang) * 5, gy - Math.sin(ang) * 5, hx, hy, '#7a4a24', 6);
+        limb(hx - Math.sin(ang) * 7, hy + Math.cos(ang) * 7, hx + Math.sin(ang) * 7, hy - Math.cos(ang) * 7, '#e0a526', 4);
+      } else limb(gx - Math.cos(ang) * 6, gy - Math.sin(ang) * 6, ex, ey, '#9a6a35', 6);
+      return;
+    }
+    const ext = q < 0 ? 0 : (q < .5 ? q * 2 : (1 - q) * 2), L = q < 0 ? 26 : 26 + (w.range - 26) * ext, n = 14;
+    ctx.fillStyle = '#c3cad6'; ctx.strokeStyle = '#c3cad6'; ctx.lineWidth = 2;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const cx = q < 0 ? gx + Math.sin(t * 2 + clock * .1) * 4 : gx + t * L;
+      const cy = q < 0 ? gy + t * 26 : gy + Math.sin(t * 9 - clock * .6) * 5 * ext;
+      ctx.beginPath(); ctx.arc(cx, cy, i === n ? 7 : 2.6, 0, 7); ctx.fill();
+      if (i === n) for (let k = 0; k < 8; k++) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(k * .785) * 11, cy + Math.sin(k * .785) * 11); ctx.stroke(); }
+    }
+  };
   if (sl) {                                              // feet-first slide
     limb(x + 4, y - 12, x + 32, y - 6, pants, 7); limb(x + 32, y - 6, x + 38, y - 6, shoe, 6);
     limb(x - 14, y - 22, x + 6, y - 12, shirt, 11);
-    limb(x - 10, y - 20, x - 26, y - 10, skin, 5); limb(x - 4, y - 18, x + 12, y - 16, skin, 5); gun(x + 10, y - 16);
+    limb(x - 10, y - 20, x - 26, y - 10, skin, 5); limb(x - 4, y - 18, x + 12, y - 16, skin, 5); held(x + 12, y - 16);
     ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x - 22, y - 26, 9, 0, 7); ctx.fill();
     ctx.fillStyle = '#3b2314'; ctx.beginPath(); ctx.arc(x - 24, y - 29, 9, Math.PI, Math.PI * 2.1); ctx.fill();
   } else {
@@ -622,7 +692,7 @@ function drawPlayer(p) {
     // front leg & arm
     const fy = hipY + Math.cos(la) * 26 * (p.onGround ? 1 : .8), fx = x + Math.sin(la) * 26;
     limb(x, hipY, fx, fy, pants, 7); limb(fx, fy, fx + 6, fy, shoe, 6);
-    limb(x, shY + 2, x + 16, y - 36, skin, 5); gun(x + 14, y - 38);
+    limb(x, shY + 2, x + 16, y - 36, skin, 5); held(x + 14, y - 38);
   }
   ctx.restore();
 }
@@ -660,6 +730,13 @@ function render() {
     const f = i < ammo ? 1 : i === ammo ? ammoT / AMMO_REGEN : 0;
     ctx.fillStyle = '#19d3ff'; ctx.fillRect(px, 62, 18 * f, 9);
   }
+  for (let i = 0; i < WEAPONS.length; i++) {
+    const wx = 18 + i * 34, sel = i === weapon;
+    ctx.fillStyle = sel ? 'rgba(255,210,63,.85)' : 'rgba(0,0,0,.45)'; ctx.fillRect(wx, 78, 30, 26);
+    ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(WEAPONS[i].icon, wx + 15, 82);
+    ctx.font = '700 10px system-ui'; ctx.fillStyle = sel ? '#2b1700' : '#cfd6e6'; ctx.fillText(String(i + 1), wx + 5, 79);
+  }
+  if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(WEAPONS[weapon].name.toUpperCase(), 160, 82, 18); ctx.globalAlpha = 1; }
   if (state === 'play' && levelTime < 90) { ctx.globalAlpha = 1 - levelTime / 90; hudTxt(level.text, W / 2, 110, 30, 'center'); ctx.globalAlpha = 1; }
 }
 
