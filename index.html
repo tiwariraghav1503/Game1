@@ -21,6 +21,7 @@
   #btn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #fire{position:absolute;right:3cqw;bottom:6cqh;width:15cqh;height:15cqh;border-radius:50%;border:0;background:radial-gradient(#7ff,#09a);color:#012;font:800 3.4cqh system-ui;box-shadow:0 .8cqh 0 #056,0 0 3cqh #0cf8;opacity:.8;touch-action:none}
   #swap{position:absolute;right:21cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#ffd23f;color:#2b1700;font:800 2.6cqh system-ui;box-shadow:0 .6cqh 0 #b36b00;opacity:.85;touch-action:none}
+  #dash{display:none;position:absolute;right:33cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#c58bff;color:#220a3a;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #7a3fc4;opacity:.85;touch-action:none}
   #fire:active{transform:translateY(.6cqh)}
   #btns{display:flex;gap:2cqw;align-items:center}
   #shopBtn{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.6cqh 3cqh;border:0;border-radius:99px;background:linear-gradient(#6ef0ff,#16a6d9);color:#032031;cursor:pointer;box-shadow:0 .8cqh 0 #0b6a8f}
@@ -49,6 +50,7 @@
   <div id="stage">
     <canvas id="game" width="900" height="420"></canvas>
     <button id="fire" aria-label="Fire">FIRE</button>
+    <button id="dash" aria-label="Dash">DASH</button>
     <button id="swap" aria-label="Switch weapon">SWAP</button>
     <div id="overlay">
       <canvas id="wheel" width="560" height="560"></canvas>
@@ -57,7 +59,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-4 = switch weapon &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-8 = switch weapon &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
     <div id="shop" class="hidden">
@@ -121,6 +123,11 @@ const WEAPONS = [
   {id:'sword', name:'Sword',   icon:'🗡️', range:80,  band:[10, 80], dur:10, cd:24, dmg:2, breaks:true},
   {id:'stick', name:'Stick',   icon:'🦯', range:58,  band:[0, 38],  dur:7,  cd:11, dmg:1},
   {id:'chain', name:'Chain',   icon:'⛓️', range:150, band:[6, 72],  dur:16, cd:34, dmg:1},
+  // boss drops: overpowered, fuelled by the POWER meter. Owning one also grants a permanent agility perk.
+  {id:'slimecannon', op:true, name:'Slime Cannon', icon:'🟢', cost:30, cd:22, perk:'Double jump',   desc:'Giant slime glob flattens everything in its path.'},
+  {id:'railgun',     op:true, name:'Plasma Railgun', icon:'🔵', cost:50, cd:26, perk:'Jet hover (hold jump)', desc:'Instant beam across the whole screen.'},
+  {id:'titanfist',   op:true, name:'Titan Fist', icon:'👊', cost:40, cd:30, perk:'Bulldozer slide (smash low obstacles)', desc:'Sends a ground quake that wrecks everything.'},
+  {id:'reapersaw',   op:true, name:'Reaper Saw', icon:'⚙️', cost:35, cd:24, perk:'Phase dash (E / Shift)', desc:'Boomerang saw that cuts both ways.'},
 ];
 const SOFT = new Set(['crate', 'barrel', 'log', 'cactus', 'cane', 'coral']);   // the sword can chop these
 let weapon = 0, atkId = 0, toast = 0;
@@ -134,6 +141,7 @@ const has = id => !!save.owned[id];
 const ARMOR_VAL = {helmet:1, vest:2, boots:1};
 const armorMax = () => Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), 0);
 const ownsWeapon = w => w.id === 'gun' || w.id === 'stick' || has(w.id);
+const anyOP = () => WEAPONS.some(w => w.op && has(w.id));
 const SHOP = [
   {id:'sword',  type:'Weapon', icon:'🗡️', name:'Sword',  cost:25, desc:'Strong swing. Chops crates, barrels and cacti.'},
   {id:'chain',  type:'Weapon', icon:'⛓️', name:'Chain',  cost:40, desc:'Long whip that hits at every height.'},
@@ -143,14 +151,14 @@ const SHOP = [
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:25, desc:'Pulls nearby diamonds to you.'},
 ];
 let gems, runGems, armor, gemLeft, toastMsg = '';
-let boss = null, eps = [], bossBanner = 0;
+let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
-const keys = {down:false};
-let touchDown = false;
+const keys = {down:false, jump:false};
+let touchDown = false, touchJump = false;
 
 function resetGame() {
-  player = {inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
-  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
+  player = {dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
+  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
@@ -245,25 +253,33 @@ function showOverlay(title, text, btn) {
 function jump() {
   if (state !== 'play' || player.dead) return;
   if (player.onGround) {
-    player.vy = level.jv; player.onGround = false; player.sliding = false;
+    player.vy = level.jv; player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
+  } else if (has('slimecannon') && !player.dj) {
+    player.dj = true; player.vy = level.jv * .92;
+    beep(560, .12, 'triangle', .05, 300); dust(player.x, player.y, 8, 'rgba(120,255,120,.9)');
   }
 }
 function setWeapon(i) {
   if (i === weapon) return;
-  if (!ownsWeapon(WEAPONS[i])) { toast = 70; toastMsg = WEAPONS[i].name + ' locked - buy in shop'; beep(120, .08, 'square', .04); return; }
+  if (!ownsWeapon(WEAPONS[i])) { toast = 70; toastMsg = WEAPONS[i].name + (WEAPONS[i].op ? ' - dropped by a boss' : ' locked - buy in shop'); beep(120, .08, 'square', .04); return; }
   weapon = i; player.atk = null; toast = 70; toastMsg = WEAPONS[i].name; beep(520, .05, 'triangle', .05);
 }
+function refreshButtons() { document.getElementById('dash').style.display = has('reapersaw') ? 'block' : 'none'; }
 function nextWeapon() { for (let k = 1; k <= WEAPONS.length; k++) { const i = (weapon + k) % WEAPONS.length; if (ownsWeapon(WEAPONS[i])) return setWeapon(i); } }
 function attack() {
   if (state !== 'play' || player.dead || fireCD > 0) return;
   if (weapon === 0) return shoot();
   const w = WEAPONS[weapon];
+  if (w.op) {
+    if (pow < w.cost) { toast = 40; toastMsg = 'Need power'; beep(120, .06, 'square', .04); return; }
+    pow -= w.cost; fireCD = w.cd; fireSuper(w); return;
+  }
   fireCD = w.cd; player.atk = {w, t:0, id:++atkId};
   beep(w.id === 'chain' ? 160 : 260, .09, 'sawtooth', .04, 220);
 }
 function killEnemy(o) {
-  o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(MAX_AMMO, ammo + 1);
+  pow = Math.min(100, pow + 8); o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(MAX_AMMO, ammo + 1);
   dust(o.x + o.w / 2, o.y - o.h / 2, 14, 'rgba(255,230,120,.95)'); beep(240, .14, 'sawtooth', .05, 200);
 }
 function shoot() {
@@ -274,6 +290,11 @@ function shoot() {
   beep(900, .07, 'square', .04, -500);
 }
 function isEnemy(o) { return o.kind === 'air' || o.kind === 'meteor' || o.kind in ENEMY_VX; }
+function dash() {
+  const p = player;
+  if (state !== 'play' || p.dead || !has('reapersaw') || p.dashCD > 0) return;
+  p.dashCD = 80; p.inv = Math.max(p.inv, 24); p.dashT = 24; beep(900, .15, 'sawtooth', .04, -600);
+}
 function wantsSlide() { return keys.down || touchDown; }
 function primary() {
   if (!$shop.classList.contains('hidden')) return;
@@ -284,27 +305,30 @@ function primary() {
 addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown','Enter'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
-  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { state === 'play' ? jump() : primary(); }
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { keys.jump = true; state === 'play' ? jump() : primary(); }
+  else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') dash();
   else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') attack();
   else if (e.code === 'KeyQ') nextWeapon();
-  else if (/^Digit[1-4]$/.test(e.code)) setWeapon(+e.code.slice(5) - 1);
+  else if (/^Digit[1-8]$/.test(e.code)) setWeapon(+e.code.slice(5) - 1);
   else if (e.code === 'Enter') primary();
   else if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
 });
 addEventListener('keyup', e => {
   if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false;
-  if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && player.vy < -5) player.vy *= .5;   // short hop
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { keys.jump = false; if (player.vy < -5) player.vy *= .5; }   // short hop
 });
 cv.addEventListener('pointerdown', e => {
   if (state !== 'play') { primary(); return; }
   const r = cv.getBoundingClientRect();
-  if ((e.clientY - r.top) / r.height > .6) touchDown = true; else jump();
+  if ((e.clientY - r.top) / r.height > .6) touchDown = true; else { touchJump = true; jump(); }
 });
-addEventListener('pointerup', () => touchDown = false);
-addEventListener('pointercancel', () => touchDown = false);
+addEventListener('pointerup', () => { touchDown = false; touchJump = false; });
+addEventListener('pointercancel', () => { touchDown = false; touchJump = false; });
 const $fire = document.getElementById('fire');
 $fire.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); attack(); });
 document.getElementById('swap').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextWeapon(); });
+document.getElementById('dash').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); dash(); });
+refreshButtons();
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
 
@@ -348,10 +372,10 @@ function gemRow() {
 
 // ---------------------------------------------------------------- bosses (one every 10 levels, cycling through four)
 const BOSSES = [
-  {id:'slime', name:'SLIME KING',     hp:26, w:130, h:100},
-  {id:'mecha', name:'MECHA-X',        hp:34, w:100, h:140},
-  {id:'sumo',  name:'SUMO TITAN',     hp:42, w:130, h:130, ch:90},
-  {id:'saw',   name:'CHAINSAW FIEND', hp:50, w:100, h:150},
+  {id:'slime', name:'SLIME KING',     hp:26, w:130, h:100, drop:'slimecannon'},
+  {id:'mecha', name:'MECHA-X',        hp:34, w:100, h:140, drop:'railgun'},
+  {id:'sumo',  name:'SUMO TITAN',     hp:42, w:130, h:130, ch:90, drop:'titanfist'},
+  {id:'saw',   name:'CHAINSAW FIEND', hp:50, w:100, h:150, drop:'reapersaw'},
 ];
 function go(b, st, time) { b.st = st; b.timer = time; b.dur = time; }
 function pbox() { const p = player, sl = p.sliding && p.onGround, pw = sl ? 24 : 14, ph = sl ? 30 : 62; return {x0:p.x - pw, x1:p.x + pw, y0:p.y - ph + 6, y1:p.y - 4}; }
@@ -377,10 +401,14 @@ function damageBoss(n) {
   if (b.hp <= 0) { b.dead = true; b.dieT = 0; eps = []; scoreAcc += 500; beep(90, .8, 'sawtooth', .09, -40); }
 }
 function finishBoss() {
-  const reward = 30 + 15 * boss.tier;
+  let reward = 30 + 15 * boss.tier, drop = '';
+  const w = WEAPONS.find(x => x.id === boss.d.drop);
+  if (!has(w.id)) { save.owned[w.id] = 1; weapon = WEAPONS.indexOf(w); toast = 120; toastMsg = w.name; drop = w.icon + ' ' + w.name.toUpperCase() + ' unlocked! Perk: ' + w.perk + '. '; refreshButtons(); }
+  else { reward += 40; drop = 'Already own the ' + w.name + ': +40 bonus. '; }
+  pow = 100;
   save.gems += reward; runGems += reward; persist();
   armor = Math.min(armorMax(), armor + 1); ammo = MAX_AMMO; boss = null; eps = []; state = 'wheel';
-  showOverlay('BOSS DEFEATED!', '+' + reward + ' 💎 and a free armor repair. Spin the wheel for your next level.', 'SPIN');
+  showOverlay('BOSS DEFEATED!', drop + '+' + reward + ' 💎 and an armor repair. Spin for your next level.', 'SPIN');
 }
 const epush = o => eps.push(Object.assign({vx:0, vy:0, t:0}, o));
 
@@ -483,11 +511,74 @@ function updateBoss(dt) {
       if (e.warn <= 0 && e.life <= 0) e.dead = true;
     } else {
       e.x += e.vx * dt; e.y += e.vy * dt;
+      if (e.kind === 'wave' && player.sliding && player.onGround && has('titanfist') && hitsPlayer(e.x - e.w / 2, e.y - e.h / 2, e.x + e.w / 2, e.y + e.h / 2)) { e.dead = true; dust(e.x, e.y, 10, 'rgba(255,220,120,.95)'); continue; }
       if (hitsPlayer(e.x - e.w / 2 + 3, e.y - e.h / 2 + 3, e.x + e.w / 2 - 3, e.y + e.h / 2 - 3)) { damagePlayer(); e.dead = true; }
       if (e.x < -80) e.dead = true;
     }
   }
   eps = eps.filter(e => !e.dead);
+}
+
+// ---------------------------------------------------------------- boss-drop weapons
+function fireSuper(w) {
+  const p = player, y = p.y - (p.sliding && p.onGround ? 14 : 38);
+  p.flash = 8;
+  if (w.id === 'slimecannon') { supers.push({kind:'glob', x:p.x + 36, px:p.x + 36, y, w:48, h:48, vx:12, t:0, dmg:6}); beep(180, .3, 'sine', .08, 200); }
+  else if (w.id === 'railgun') { supers.push({kind:'rail', x:p.x + 30, y, w:W, h:40, life:16, t:0, fresh:true, dmg:8}); beep(1200, .35, 'sawtooth', .06, -900); shake = 4; }
+  else if (w.id === 'titanfist') { supers.push({kind:'quake', x:p.x + 30, px:p.x + 30, y:GROUND - 45, w:70, h:90, vx:15, t:0, dmg:8}); shake = 9; beep(70, .4, 'sawtooth', .09); }
+  else { supers.push({kind:'boomer', x:p.x + 30, px:p.x + 30, y, w:46, h:46, vx:17, out:true, t:0, dmg:5}); beep(300, .3, 'sawtooth', .06, 300); }
+}
+function updateSupers(dt) {
+  const p = player;
+  for (const s of supers) {
+    s.t += dt;
+    let x0, x1;
+    if (s.kind === 'rail') { x0 = s.x; x1 = W + 40; s.life -= dt; if (!s.fresh) { if (s.life <= 0) s.gone = true; continue; } }
+    else {
+      s.px = s.x; s.x += s.vx * dt;
+      if (s.kind === 'boomer' && s.out && s.x >= W - 110) { s.out = false; s.vx = -17; s.bossHit = false; }
+      if (s.kind === 'boomer' && !s.out && s.x <= p.x + 20) { s.gone = true; continue; }
+      x0 = Math.min(s.px, s.x) - s.w / 2; x1 = Math.max(s.px, s.x) + s.w / 2;
+      if (s.x > W + 60) s.gone = true;
+    }
+    const y0 = s.y - s.h / 2, y1 = s.y + s.h / 2;
+    for (const o of obstacles) {
+      if (o.dead || o.x + o.w < x0 || o.x > x1 || o.y < y0 || o.y - o.h > y1) continue;
+      if (isEnemy(o)) killEnemy(o); else { o.dead = true; scoreAcc += 30 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,255,255,.9)'); }
+      beep(220, .08, 'square', .04);
+    }
+    for (const e of eps) if (e.kind !== 'beam' && !e.dead && e.x + e.w / 2 > x0 && e.x - e.w / 2 < x1 && e.y + e.h / 2 > y0 && e.y - e.h / 2 < y1) { e.dead = true; dust(e.x, e.y, 6, 'rgba(255,255,255,.9)'); }
+    if (boss && !boss.dead && !s.bossHit) {
+      const bx = bossBox(boss);
+      if (x1 > bx[0] && x0 < bx[2] && y1 > bx[1] && y0 < bx[3]) {
+        s.bossHit = true; damageBoss(s.dmg); shake = Math.max(shake, 8); dust((bx[0] + bx[2]) / 2, (y0 + y1) / 2, 14, 'rgba(255,255,255,.95)');
+        if (s.kind === 'glob') s.gone = true;
+      }
+    }
+    if (s.kind === 'rail') s.fresh = false;
+  }
+  supers = supers.filter(s => !s.gone);
+}
+function drawSupers() {
+  for (const s of supers) {
+    ctx.save();
+    if (s.kind === 'glob') {
+      ctx.fillStyle = 'rgba(100,230,90,.35)'; ctx.fillRect(s.x - 90, s.y - 12, 90, 24);
+      ctx.fillStyle = '#6be85a'; ctx.beginPath(); ctx.arc(s.x, s.y, 24, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(s.x - 7, s.y - 8, 7, 0, 7); ctx.fill();
+    } else if (s.kind === 'rail') {
+      const a = Math.max(0, s.life / 16);
+      ctx.fillStyle = 'rgba(40,200,255,' + a * .6 + ')'; ctx.fillRect(s.x, s.y - 20 * a - 6, W, 40 * a + 12);
+      ctx.fillStyle = 'rgba(255,255,255,' + a + ')'; ctx.fillRect(s.x, s.y - 6 * a, W, 12 * a);
+    } else if (s.kind === 'quake') {
+      ctx.fillStyle = '#e6b84a'; for (let i = 0; i < 5; i++) { const bx = s.x - i * 18, hh = 70 - i * 10; ctx.beginPath(); ctx.moveTo(bx - 14, GROUND); ctx.lineTo(bx, GROUND - hh); ctx.lineTo(bx + 14, GROUND); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,240,180,.5)'; ctx.fillRect(s.x - 90, GROUND - 8, 100, 8);
+    } else {
+      ctx.translate(s.x, s.y); ctx.rotate(s.t * .6);
+      ctx.fillStyle = '#d9dee9'; ctx.beginPath(); for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2, r = i % 2 ? 17 : 25; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.fill();
+      ctx.fillStyle = '#c58bff'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------- obstacles
@@ -555,14 +646,19 @@ function update(dt) {
   p.phase += speed * dt * .045;
   if (wantsSlide() && p.onGround) p.sliding = true; else if (!wantsSlide()) p.sliding = false;
   if (!p.onGround) {
-    p.vy += level.g * (wantsSlide() ? 2.4 : 1) * dt; p.y += p.vy * dt;
-    if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.onGround = true; dust(p.x, GROUND, 5); }
+    p.vy += level.g * (wantsSlide() ? 2.4 : 1) * dt;
+    if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
+    p.y += p.vy * dt;
+    if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; dust(p.x, GROUND, 5); }
   } else if (Math.random() < .25 * dt) dust(p.x - 10, GROUND, 1, level.snow ? '#fff' : 'rgba(120,100,80,.5)');
 
   if (!boss) { spawnLeft -= speed * dt; if (spawnLeft <= 0) spawn(); }
   if (boss) updateBoss(dt);
   if (bossBanner > 0) bossBanner -= dt;
   if (p.inv > 0) p.inv -= dt;
+  if (p.dashCD > 0) p.dashCD -= dt;
+  if (p.dashT > 0) p.dashT -= dt;
+  pow = Math.min(100, pow + .09 * dt);
   gemLeft -= speed * dt;
   if (gemLeft <= 0 && boss) gemLeft = 200;
   if (gemLeft <= 0) { if (obstacles.some(o => o.x > W - 160)) gemLeft = 90; else { gemRow(); gemLeft = speed * (70 + Math.random() * 90); } }
@@ -571,7 +667,7 @@ function update(dt) {
     g.x -= speed * dt; g.t += dt;
     if (has('magnet')) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
     if (Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
-      g.got = true; save.gems += g.v; runGems += g.v; persist();
+      g.got = true; save.gems += g.v; runGems += g.v; pow = Math.min(100, pow + g.v); persist();
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
   }
@@ -632,10 +728,15 @@ function update(dt) {
       }
     }
   }
+  updateSupers(dt);
   bullets = bullets.filter(b => !b.gone && b.x < W + 40);
   obstacles = obstacles.filter(o => !o.dead);
   for (const o of obstacles) {
     if (!hit(o) || p.inv > 0) continue;
+    if (p.sliding && p.onGround && has('titanfist') && o.kind !== 'air' && o.kind !== 'meteor' && o.sub !== 'ufo') {   // bulldozer slide
+      o.dead = true; scoreAcc += 25 * level.mult; shake = 5; dust(o.x + o.w / 2, o.y - o.h / 2, 12, 'rgba(255,220,120,.95)'); beep(110, .12, 'sawtooth', .06);
+      continue;
+    }
     if (armor > 0) {                                  // armor soaks the crash and smashes the obstacle
       armor--; p.inv = 70; o.dead = true; shake = 9; flash = .5;
       dust(o.x + o.w / 2, o.y - o.h / 2, 16, 'rgba(255,210,90,.95)'); beep(200, .25, 'sawtooth', .07, -120);
@@ -901,7 +1002,8 @@ function limb(x0, y0, x1, y1, col, w = 6) {
 function drawPlayer(p) {
   const x = p.x, y = p.y, skin = '#f2c29b', shirt = '#e63946', pants = '#274c77', shoe = has('boots') && armor > 0 ? '#f5b700' : '#fff';
   ctx.save();
-  if (p.inv > 0 && Math.floor(clock / 4) % 2) ctx.globalAlpha = .4;
+  if (p.dashT > 0) { ctx.globalAlpha = .25; ctx.fillStyle = '#c58bff'; for (let k = 1; k <= 3; k++) ctx.fillRect(x - 14 - k * 18, y - 60, 12, 56); ctx.globalAlpha = .55; }
+  else if (p.inv > 0 && Math.floor(clock / 4) % 2) ctx.globalAlpha = .4;
   ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 22 * (1 - Math.min(.5, (GROUND - y) / 300)), 5, 0, 0, 7); ctx.fill();
   if (p.dead) { ctx.translate(x, y - 20); ctx.rotate(-1.3); ctx.translate(-x, -(y - 20)); }
   const helm = has('helmet') && armor > 0, vest = has('vest') && armor > 0;
@@ -927,6 +1029,17 @@ function drawPlayer(p) {
         limb(gx - Math.cos(ang) * 5, gy - Math.sin(ang) * 5, hx, hy, '#7a4a24', 6);
         limb(hx - Math.sin(ang) * 7, hy + Math.cos(ang) * 7, hx + Math.sin(ang) * 7, hy - Math.cos(ang) * 7, '#e0a526', 4);
       } else limb(gx - Math.cos(ang) * 6, gy - Math.sin(ang) * 6, ex, ey, '#9a6a35', 6);
+      return;
+    }
+    if (w.op) {
+      const glow = pow >= w.cost;
+      ctx.save(); if (glow) { ctx.shadowColor = w.id === 'slimecannon' ? '#6be85a' : w.id === 'railgun' ? '#38e1ff' : w.id === 'titanfist' ? '#ffd23f' : '#c58bff'; ctx.shadowBlur = 14; }
+      if (w.id === 'slimecannon') { ctx.fillStyle = '#2f9a45'; ctx.fillRect(gx, gy - 6, 26, 12); ctx.fillStyle = '#6be85a'; ctx.beginPath(); ctx.arc(gx + 28, gy, 9, 0, 7); ctx.fill(); }
+      else if (w.id === 'railgun') { ctx.fillStyle = '#39415a'; ctx.fillRect(gx - 4, gy - 5, 38, 10); ctx.fillStyle = '#38e1ff'; ctx.fillRect(gx + 8, gy - 2, 28, 4); ctx.fillStyle = '#8fa0bf'; ctx.fillRect(gx + 2, gy + 4, 6, 9); }
+      else if (w.id === 'titanfist') { ctx.fillStyle = '#e0b43a'; ctx.beginPath(); ctx.arc(gx + 10, gy, 14, 0, 7); ctx.fill(); ctx.fillStyle = '#b8892a'; ctx.fillRect(gx + 4, gy - 10, 3, 20); ctx.fillRect(gx + 12, gy - 12, 3, 24); }
+      else { ctx.translate(gx + 12, gy); ctx.rotate(clock * .4); ctx.fillStyle = '#d9dee9'; ctx.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, r = i % 2 ? 11 : 16; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.fill(); ctx.fillStyle = '#c58bff'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 7); ctx.fill(); }
+      ctx.restore();
+      if (p.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(gx + 34, gy, 6 + p.flash, 0, 7); ctx.fill(); }
       return;
     }
     const ext = q < 0 ? 0 : (q < .5 ? q * 2 : (1 - q) * 2), L = q < 0 ? 26 : 26 + (w.range - 26) * ext, n = 14;
@@ -1063,6 +1176,7 @@ function render() {
   for (const q of particles) { ctx.globalAlpha = Math.max(0, q.life / 35); ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1;
   if (boss) { drawBoss(boss); drawEps(); }
+  drawSupers();
   for (const g of gems) {
     const by = g.y + Math.sin(g.t * .12) * 3, r = g.v > 1 ? 14 : 10, c = g.v > 1 ? ['#c26bff', '#e6bcff', '#8a3fd1'] : ['#38e1ff', '#c9f7ff', '#1796c7'];
     ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(g.x, by - r); ctx.lineTo(g.x + r, by - r * .2); ctx.lineTo(g.x, by + r); ctx.lineTo(g.x - r, by - r * .2); ctx.fill();
@@ -1110,7 +1224,15 @@ function render() {
     if (!ownsWeapon(WEAPONS[i])) { ctx.font = '10px system-ui,"Apple Color Emoji"'; ctx.fillText('🔒', wx + 22, 94); }
     ctx.font = '700 10px system-ui'; ctx.fillStyle = sel ? '#2b1700' : '#cfd6e6'; ctx.fillText(String(i + 1), wx + 5, 79);
   }
-  if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 160, 82, 18); ctx.globalAlpha = 1; }
+  if (anyOP()) {
+    const cost = WEAPONS[weapon].op ? WEAPONS[weapon].cost : 0;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, 110, 150, 10); ctx.fillStyle = pow >= cost && cost ? '#ffd23f' : '#c58bff'; ctx.fillRect(18, 110, 150 * pow / 100, 10);
+    if (cost) { ctx.fillStyle = '#fff'; ctx.fillRect(18 + 150 * cost / 100 - 1, 108, 2, 14); }
+    ctx.font = '700 10px system-ui'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('POWER', 174, 111);
+    const perks = [['slimecannon', '🦘'], ['railgun', '🚀'], ['titanfist', '🚜'], ['reapersaw', '⚡']].filter(k => has(k[0]));
+    ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
+  }
+  if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 290, 82, 18); ctx.globalAlpha = 1; }
   if (boss) {
     const bx = W / 2 - 170, f = Math.max(0, boss.hp / boss.max);
     ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(bx - 3, 10, 346, 20); ctx.fillStyle = f > .5 ? '#ff4d4d' : '#ff9d2e'; ctx.fillRect(bx, 13, 340 * f, 14);
@@ -1136,7 +1258,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
 })();
 </script>
 </body>
