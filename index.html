@@ -38,6 +38,7 @@
   .tab.on{background:#6ef0ff;color:#032031}
   #shopmsg{font-size:3.2cqh;min-height:4cqh;color:#ffd23f}
   .card.pack b{font-size:5cqh;color:#6ef0ff}
+  .port{height:14cqh;width:auto;align-self:flex-start}
   .card .tag{font-size:2.8cqh;color:#ffd23f;min-height:3.4cqh}
   #gemcount{font-size:5cqh;font-weight:800;color:#6ef0ff;flex:1}
   #shopclose{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.2cqh 3cqh;border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
@@ -72,7 +73,7 @@
       </div>
     </div>
     <div id="shop" class="hidden">
-      <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
+      <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="heroes">HEROES</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
       <div id="shopmsg"></div>
       <div id="items"></div>
     </div>
@@ -83,7 +84,8 @@
 (() => {
 'use strict';
 const W = 900, H = 420, GROUND = 340;
-const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+const cv = document.getElementById('game');
+let ctx = cv.getContext('2d');
 const wcv = document.getElementById('wheel'), wctx = wcv.getContext('2d');
 const overlay = document.getElementById('overlay');
 const $shop = document.getElementById('shop'), $shopBtn = document.getElementById('shopBtn');
@@ -142,14 +144,26 @@ const WEAPONS = [
 const SOFT = new Set(['crate', 'barrel', 'log', 'cactus', 'cane', 'coral']);   // the sword can chop these
 let weapon = 0, atkId = 0, toast = 0;
 let bullets, ammo, ammoT, fireCD;
-const MAX_AMMO = 6, AMMO_REGEN = 55;
+const AMMO_REGEN = 55;
+const maxAmmo = () => 6 + CH().ammo;
 // ---------------------------------------------------------------- save + gear
-let save = {gems:0, owned:{}};
-try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}}; } catch (e) {}
+// playable heroes: each trades something for something. Unspecified stats default to 1 / 0.
+const HEROES = [
+  {id:'runner',    name:'Runner',    cost:0,   desc:'Balanced all-rounder. Free starter.', skin:'#f2c29b', shirt:'#e63946', pants:'#274c77', shoe:'#fff',    hair:'#3b2314'},
+  {id:'ninja',     name:'Ninja',     cost:150, desc:'Jumps 12% higher. Melee swings 25% faster.', skin:'#e8b890', shirt:'#23232e', pants:'#2e2e3c', shoe:'#111',    hair:'#111', jump:1.12, melee:.75},
+  {id:'cowboy',    name:'Cowboy',    cost:150, desc:'Carries 9 shots and reloads 35% faster.', skin:'#e8b48c', shirt:'#3b78c4', pants:'#6b4a2a', shoe:'#4a2e14', hair:'#7a4a1a', ammo:3, regen:1.35},
+  {id:'knight',    name:'Knight',    cost:250, desc:'Starts each run with +1 armor. Heavy: lower jump, slower walk.', skin:'#f0c8a0', shirt:'#aab6cf', pants:'#6b7690', shoe:'#555e75', hair:'#5b3a1a', armor:1, jump:.94, walk:.85},
+  {id:'astronaut', name:'Astronaut', cost:250, desc:'Low gravity: long, floaty jumps.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
+  {id:'hunter',    name:'Treasure Hunter', cost:300, desc:'Built-in magnet and 25% more diamonds.', skin:'#d9a272', shirt:'#3b9a6a', pants:'#8a6a3a', shoe:'#4a3320', hair:'#2a1a10', gem:1.25, magnet:true},
+].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
+let save = {gems:0, owned:{}, hero:'runner'};
+try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner'}; } catch (e) {}
+if (!HEROES.some(h => h.id === save.hero && (h.cost === 0 || save.owned['hero_' + h.id]))) save.hero = 'runner';
+const CH = () => HEROES.find(h => h.id === save.hero) || HEROES[0];
 const persist = () => { try { localStorage.setItem('wheelrunner.save', JSON.stringify(save)); } catch (e) {} };
 const has = id => !!save.owned[id];
 const ARMOR_VAL = {helmet:1, vest:2, boots:1};
-const armorMax = () => Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), 0);
+const armorMax = () => Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), CH().armor);
 const ownsWeapon = w => w.id === 'gun' || has(w.id);   // the Blaster is the free starter weapon
 const anyOP = () => WEAPONS.some(w => w.op && has(w.id));
 const SHOP = [
@@ -179,7 +193,7 @@ let touchDown = false, touchJump = false, touchL = false, touchR = false;
 
 function resetGame() {
   player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
-  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
+  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
@@ -260,7 +274,7 @@ function spinWheel() {
 
 function startLevel() {
   overlay.classList.add('hidden');
-  obstacles = []; bullets = []; ammo = MAX_AMMO; levelTime = 0; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
+  obstacles = []; bullets = []; ammo = maxAmmo(); levelTime = 0; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
   state = 'play';
 }
 
@@ -274,10 +288,10 @@ function showOverlay(title, text, btn) {
 function jump() {
   if (state !== 'play' || player.dead) return;
   if (player.onGround) {
-    player.vy = level.jv; player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
+    player.vy = level.jv * CH().jump; player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
   } else if (has('slimecannon') && !player.dj) {
-    player.dj = true; player.vy = level.jv * .92;
+    player.dj = true; player.vy = level.jv * CH().jump * .92;
     beep(560, .12, 'triangle', .05, 300); dust(player.x, player.y, 8, 'rgba(120,255,120,.9)');
   }
 }
@@ -298,11 +312,11 @@ function attack() {
     if (pow < w.cost) { toast = 40; toastMsg = 'Need power'; beep(120, .06, 'square', .04); return; }
     pow -= w.cost; fireCD = w.cd; fireSuper(w); return;
   }
-  fireCD = w.cd; player.atk = {w, t:0, id:++atkId};
+  fireCD = w.cd * CH().melee; player.atk = {w, t:0, id:++atkId};
   beep(w.id === 'chain' ? 160 : 260, .09, 'sawtooth', .04, 220);
 }
 function killEnemy(o) {
-  pow = Math.min(100, pow + 8); o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(MAX_AMMO, ammo + 1);
+  pow = Math.min(100, pow + 8); o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(maxAmmo(), ammo + 1);
   dust(o.x + o.w / 2, o.y - o.h / 2, 14, 'rgba(255,230,120,.95)'); beep(240, .14, 'sawtooth', .05, 200);
 }
 function shoot() {
@@ -367,6 +381,20 @@ const $items = document.getElementById('items'), $msg = document.getElementById(
 function renderShop() {
   document.getElementById('gemcount').textContent = '💎 ' + save.gems;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === shopTab));
+  if (shopTab === 'heroes') {
+    $items.innerHTML = HEROES.map(h => {
+      const own = h.cost === 0 || has('hero_' + h.id), sel = save.hero === h.id, ok = save.gems >= h.cost;
+      return '<div class="card' + (sel ? ' owned' : '') + '"><canvas class="port" data-hero="' + h.id + '" width="80" height="110"></canvas><b>' + h.name + '</b><small>' + h.desc +
+        '</small><button data-hero-btn="' + h.id + '"' + (sel || (!own && !ok) ? ' disabled' : '') + '>' + (sel ? 'SELECTED' : own ? 'SELECT' : 'BUY 💎 ' + h.cost) + '</button></div>';
+    }).join('');
+    const main = ctx;
+    $items.querySelectorAll('canvas.port').forEach(c => {
+      const h = HEROES.find(x => x.id === c.dataset.hero); ctx = c.getContext('2d');
+      drawPlayer({x:36, y:100, vy:0, onGround:true, sliding:false, phase:.7, dead:false, face:1, portrait:true, ch:h, atk:null, inv:0, dashT:0, flash:0});
+    });
+    ctx = main;
+    return;
+  }
   if (shopTab === 'gems') {
     $items.innerHTML = PACKS.map(p => '<div class="card pack"><span class="ic">💎</span><span class="tp">Gem pack</span><b>' + p.gems + '</b><span class="tag">' + p.tag + '</span><small></small><button data-pack="' + p.id + '">' + p.price + '</button></div>').join('');
     return;
@@ -384,6 +412,14 @@ $shopBtn.addEventListener('click', openShop);
 document.getElementById('shopclose').addEventListener('click', closeShop);
 addEventListener('keydown', e => { if (e.code === 'Escape') closeShop(); });
 $items.addEventListener('click', e => {
+  const hb = e.target.dataset && e.target.dataset['heroBtn'];
+  if (hb) {
+    const h = HEROES.find(x => x.id === hb), own = h.cost === 0 || has('hero_' + hb);
+    if (!own) { if (save.gems < h.cost) return; save.gems -= h.cost; save.owned['hero_' + hb] = 1; persist(); beep(660, .1, 'square', .06); $msg.textContent = h.name + ' unlocked. Press SELECT to play as them.'; }
+    else if (state !== 'title' && state !== 'over') { $msg.textContent = 'Switch heroes between runs: use the shop from the title or crash screen.'; return; }
+    else { save.hero = hb; persist(); $msg.textContent = 'Playing as ' + h.name + '.'; beep(880, .08, 'triangle', .05); }
+    renderShop(); return;
+  }
   const pk = e.target.dataset && e.target.dataset.pack;
   if (pk) {
     const link = PAYMENT_LINKS[pk];
@@ -451,7 +487,7 @@ function finishBoss() {
   else { reward += 40; drop = 'Already own the ' + w.name + ': +40 bonus. '; }
   pow = 100; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
   save.gems += reward; runGems += reward; persist();
-  armor = Math.min(armorMax(), armor + 1); ammo = MAX_AMMO; boss = null; eps = []; supers = []; minis = []; chip = 0; state = 'wheel'; setBossUI();
+  armor = Math.min(armorMax(), armor + 1); ammo = maxAmmo(); boss = null; eps = []; supers = []; minis = []; chip = 0; state = 'wheel'; setBossUI();
   showOverlay('BOSS DEFEATED!', drop + '+' + reward + ' 💎 and an armor repair. Spin for your next level.', 'SPIN');
 }
 const epush = o => eps.push(Object.assign({vx:0, vy:0, t:0}, o));
@@ -720,7 +756,7 @@ function spawn() {
     }
     if (Math.random() < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
   }
-  const airtime = 2 * Math.abs(level.jv) / level.g;
+  const airtime = 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);
   const gx = level.gapX || [14, 48];
   spawnLeft = speed * (airtime + gx[0] + Math.random() * (gx[1] - gx[0]));
 }
@@ -758,12 +794,12 @@ function update(dt) {
   if (boss) {                                           // boss arena: walk freely, no scrolling
     mv = (keys.right || touchR ? 1 : 0) - (keys.left || touchL ? 1 : 0);
     if (mv) p.face = mv;
-    p.x = Math.max(34, Math.min(W - 34, p.x + mv * (p.sliding && p.onGround ? 3.2 : 5.6) * dt));
+    p.x = Math.max(34, Math.min(W - 34, p.x + mv * (p.sliding && p.onGround ? 3.2 : 5.6) * CH().walk * dt));
   }
   p.phase += (boss ? Math.abs(mv) * 6 : speed) * dt * .045;
   if (wantsSlide() && p.onGround) p.sliding = true; else if (!wantsSlide()) p.sliding = false;
   if (!p.onGround) {
-    p.vy += level.g * (wantsSlide() ? 2.4 : 1) * dt;
+    p.vy += level.g * CH().grav * (wantsSlide() ? 2.4 : 1) * dt;
     if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
     p.y += p.vy * dt;
     if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; dust(p.x, GROUND, 5); }
@@ -782,15 +818,15 @@ function update(dt) {
   const gph = p.sliding && p.onGround ? 30 : 62;
   for (const g of gems) {
     g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
-    if (has('magnet')) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
+    if (has('magnet') || CH().magnet) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
     if (Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
-      g.got = true; save.gems += g.v; runGems += g.v; pow = Math.min(100, pow + g.v); persist();
+      g.got = true; const gain = Math.floor(g.v * CH().gem + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist();
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
   }
   gems = gems.filter(g => !g.got && g.x > -30 && (g.ttl === undefined || g.ttl > 0));
   fireCD -= dt; if (p.flash > 0) p.flash -= dt;
-  if (ammo < MAX_AMMO) { ammoT += dt * (boss ? 2 : 1); if (ammoT >= AMMO_REGEN) { ammo++; ammoT = 0; } } else ammoT = 0;
+  if (ammo < maxAmmo()) { ammoT += dt * (boss ? 2 : 1) * CH().regen; if (ammoT >= AMMO_REGEN) { ammo++; ammoT = 0; } } else ammoT = 0;
   for (const o of obstacles) {
     o.px = o.x;
     o.x -= (speed + (o.vx || 0)) * dt; o.t += .2 * dt;
@@ -1118,15 +1154,24 @@ function limb(x0, y0, x1, y1, col, w = 6) {
   ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
 }
+function accessory(ch, hx, hy) {          // hat / mask / helmet for each hero, drawn around the head centre
+  const id = ch.id;
+  if (id === 'ninja') { ctx.fillStyle = '#16161f'; ctx.beginPath(); ctx.arc(hx, hy + 1, 10.5, 0, Math.PI); ctx.fill(); ctx.fillStyle = '#e63946'; ctx.fillRect(hx - 11, hy - 6, 22, 4); ctx.fillRect(hx - 19, hy - 5, 9, 3); }
+  else if (id === 'knight') { ctx.fillStyle = '#9aa6bd'; ctx.beginPath(); ctx.arc(hx, hy - 1, 11.5, Math.PI, 0); ctx.fill(); ctx.fillRect(hx - 11, hy - 1, 22, 5); ctx.fillStyle = '#222'; ctx.fillRect(hx + 1, hy - 3, 10, 3); ctx.fillStyle = '#d22'; ctx.beginPath(); ctx.ellipse(hx - 3, hy - 14, 3.5, 8, .35, 0, 7); ctx.fill(); }
+  else if (id === 'cowboy') { ctx.fillStyle = '#8b5a2b'; ctx.beginPath(); ctx.ellipse(hx, hy - 8, 18, 4.5, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.roundRect(hx - 8, hy - 20, 16, 14, 4); ctx.fill(); ctx.fillStyle = '#e0b43a'; ctx.fillRect(hx - 8, hy - 11, 16, 3); }
+  else if (id === 'astronaut') { ctx.fillStyle = 'rgba(150,220,255,.28)'; ctx.beginPath(); ctx.arc(hx, hy, 14, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#cfd6e4'; ctx.fillRect(hx - 20, hy + 12, 10, 24); }
+  else if (id === 'hunter') { ctx.fillStyle = '#d8c08a'; ctx.beginPath(); ctx.arc(hx, hy - 3, 12, Math.PI, 0); ctx.fill(); ctx.beginPath(); ctx.ellipse(hx, hy - 3, 17, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#7a5a2a'; ctx.fillRect(hx - 12, hy - 8, 24, 3); }
+}
 function drawPlayer(p) {
-  const x = p.x, y = p.y, skin = '#f2c29b', shirt = '#e63946', pants = '#274c77', shoe = has('boots') && armor > 0 ? '#f5b700' : '#fff';
+  const ch = p.ch || CH(), pt = !!p.portrait;
+  const x = p.x, y = p.y, skin = ch.skin, shirt = ch.shirt, pants = ch.pants, shoe = !pt && has('boots') && armor > 0 ? '#f5b700' : ch.shoe;
   ctx.save();
   if (p.face < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
   if (p.dashT > 0) { ctx.globalAlpha = .25; ctx.fillStyle = '#c58bff'; for (let k = 1; k <= 3; k++) ctx.fillRect(x - 14 - k * 18, y - 60, 12, 56); ctx.globalAlpha = .55; }
   else if (p.inv > 0 && Math.floor(clock / 4) % 2) ctx.globalAlpha = .4;
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 22 * (1 - Math.min(.5, (GROUND - y) / 300)), 5, 0, 0, 7); ctx.fill();
+  if (!pt) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 22 * (1 - Math.min(.5, (GROUND - y) / 300)), 5, 0, 0, 7); ctx.fill(); }
   if (p.dead) { ctx.translate(x, y - 20); ctx.rotate(-1.3); ctx.translate(-x, -(y - 20)); }
-  const helm = has('helmet') && armor > 0, vest = has('vest') && armor > 0;
+  const helm = !pt && has('helmet') && armor > 0, vest = !pt && has('vest') && armor > 0;
   const sl = p.sliding && p.onGround && !p.dead;
   const gun = (gx, gy) => {
     ctx.fillStyle = '#39404f'; ctx.fillRect(gx, gy - 4, 20, 8); ctx.fillStyle = '#8fa0bf'; ctx.fillRect(gx + 4, gy + 3, 6, 8);
@@ -1134,6 +1179,7 @@ function drawPlayer(p) {
     if (p.flash > 0) { ctx.fillStyle = 'rgba(180,250,255,.9)'; ctx.beginPath(); ctx.arc(gx + 26, gy, 6 + p.flash, 0, 7); ctx.fill(); }
   };
   const held = (gx, gy) => {
+    if (pt) return;
     const w = WEAPONS[weapon], at = p.atk;
     if (w.id === 'gun') return gun(gx, gy);
     const q = at ? Math.min(1, at.t / w.dur) : -1;
@@ -1177,7 +1223,7 @@ function drawPlayer(p) {
     limb(x - 14, y - 22, x + 6, y - 12, vest ? '#9aa6bd' : shirt, 11);
     limb(x - 10, y - 20, x - 26, y - 10, skin, 5); limb(x - 4, y - 18, x + 12, y - 16, skin, 5); held(x + 12, y - 16);
     ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x - 22, y - 26, 9, 0, 7); ctx.fill();
-    ctx.fillStyle = '#3b2314'; ctx.beginPath(); ctx.arc(x - 24, y - 29, 9, Math.PI, Math.PI * 2.1); ctx.fill();
+    ctx.fillStyle = ch.hair; ctx.beginPath(); ctx.arc(x - 24, y - 29, 9, Math.PI, Math.PI * 2.1); ctx.fill(); accessory(ch, x - 22, y - 26);
     if (helm) { ctx.fillStyle = '#aab6cf'; ctx.beginPath(); ctx.arc(x - 23, y - 28, 11, Math.PI * .9, Math.PI * 2.1); ctx.fill(); ctx.fillStyle = '#ffd23f'; ctx.fillRect(x - 24, y - 39, 3, 5); }
   } else {
     const hipY = y - 26, shY = y - 46;
@@ -1191,7 +1237,7 @@ function drawPlayer(p) {
     limb(x, hipY, x + 3, shY, vest ? '#9aa6bd' : shirt, 12); if (vest) limb(x + 1, hipY - 4, x + 2, shY + 6, '#ffd23f', 4);
     // head
     ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x + 4, y - 58, 10, 0, 7); ctx.fill();
-    ctx.fillStyle = '#3b2314'; ctx.beginPath(); ctx.arc(x + 3, y - 60, 10.5, Math.PI * .95, Math.PI * 2.05); ctx.fill();
+    ctx.fillStyle = ch.hair; ctx.beginPath(); ctx.arc(x + 3, y - 60, 10.5, Math.PI * .95, Math.PI * 2.05); ctx.fill(); accessory(ch, x + 4, y - 58);
     if (helm) { ctx.fillStyle = '#aab6cf'; ctx.beginPath(); ctx.arc(x + 3, y - 59, 12, Math.PI * .95, Math.PI * 2.05); ctx.fill(); ctx.fillStyle = '#ffd23f'; ctx.fillRect(x + 1, y - 72, 4, 6); }
     ctx.fillStyle = '#222'; ctx.fillRect(x + 8, y - 60, 2.5, 3);
     // front leg & arm
@@ -1336,7 +1382,7 @@ function render() {
   const prog = state === 'title' ? 0 : Math.min(1, levelTime / LEVEL_FRAMES);   // full while a boss is up
   ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(18, 46, 160, 8);
   ctx.fillStyle = level.wheel; ctx.fillRect(18, 46, 160 * prog, 8);
-  for (let i = 0; i < MAX_AMMO; i++) {
+  for (let i = 0; i < maxAmmo(); i++) {
     const px = 18 + i * 22; ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(px, 62, 18, 9);
     const f = i < ammo ? 1 : i === ammo ? ammoT / AMMO_REGEN : 0;
     ctx.fillStyle = '#19d3ff'; ctx.fillRect(px, 62, 18 * f, 9);
@@ -1387,7 +1433,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
 })();
 </script>
 </body>
