@@ -33,16 +33,21 @@
   #shop{position:absolute;inset:0;display:flex;flex-direction:column;gap:2cqh;padding:3cqh 4cqw;box-sizing:border-box;background:rgba(6,8,22,.95)}
   #shop.hidden{display:none}
   #shophead{display:flex;align-items:center;gap:3cqw}
-  #shophead h2{margin:0;font-size:8cqh;line-height:1}
+  #shophead h2{margin:0 1cqw 0 0;font-size:7cqh;line-height:1}
+  .tab{font:inherit;font-weight:800;font-size:3.6cqh;padding:1cqh 2.4cqh;border:0;border-radius:99px;background:#232842;color:#9fa8cc;cursor:pointer}
+  .tab.on{background:#6ef0ff;color:#032031}
+  #shopmsg{font-size:3.2cqh;min-height:4cqh;color:#ffd23f}
+  .card.pack b{font-size:5cqh;color:#6ef0ff}
+  .card .tag{font-size:2.8cqh;color:#ffd23f;min-height:3.4cqh}
   #gemcount{font-size:5cqh;font-weight:800;color:#6ef0ff;flex:1}
   #shopclose{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.2cqh 3cqh;border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
-  #items{display:grid;grid-template-columns:repeat(3,1fr);gap:2cqh 2cqw;flex:1;min-height:0}
+  #items{display:grid;grid-template-columns:repeat(4,1fr);gap:2cqh 1.6cqw;flex:1;min-height:0}
   .card{background:#1a1f38;border-radius:2cqh;padding:1.6cqh 1.8cqw;display:flex;flex-direction:column;gap:.6cqh;min-height:0;min-width:0}
-  .card .ic{font-size:6cqh;line-height:1}
+  .card .ic{font-size:5.2cqh;line-height:1}
   .card .tp{font-size:2.6cqh;letter-spacing:.08em;text-transform:uppercase;opacity:.55}
-  .card b{font-size:4cqh}
-  .card small{font-size:3cqh;opacity:.8;line-height:1.2;flex:1}
-  .card button{font:inherit;font-weight:800;font-size:3.6cqh;padding:1cqh 0;border:0;border-radius:1.4cqh;background:#6ef0ff;color:#032031;cursor:pointer}
+  .card b{font-size:3.8cqh}
+  .card small{font-size:2.7cqh;opacity:.8;line-height:1.2;flex:1}
+  .card button{font:inherit;font-weight:800;font-size:3.3cqh;padding:1cqh 0;border:0;border-radius:1.4cqh;background:#6ef0ff;color:#032031;cursor:pointer}
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:3.2cqh;opacity:.6}
@@ -67,7 +72,8 @@
       </div>
     </div>
     <div id="shop" class="hidden">
-      <div id="shophead"><h2>SHOP</h2><span id="gemcount"></span><button id="shopclose">BACK</button></div>
+      <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
+      <div id="shopmsg"></div>
       <div id="items"></div>
     </div>
   </div>
@@ -144,16 +150,27 @@ const persist = () => { try { localStorage.setItem('wheelrunner.save', JSON.stri
 const has = id => !!save.owned[id];
 const ARMOR_VAL = {helmet:1, vest:2, boots:1};
 const armorMax = () => Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), 0);
-const ownsWeapon = w => w.id === 'gun' || w.id === 'stick' || has(w.id);
+const ownsWeapon = w => w.id === 'gun' || has(w.id);   // the Blaster is the free starter weapon
 const anyOP = () => WEAPONS.some(w => w.op && has(w.id));
 const SHOP = [
-  {id:'sword',  type:'Weapon', icon:'🗡️', name:'Sword',  cost:25, desc:'Strong swing. Chops crates, barrels and cacti.'},
-  {id:'chain',  type:'Weapon', icon:'⛓️', name:'Chain',  cost:40, desc:'Long whip that hits at every height.'},
-  {id:'helmet', type:'Armor',  icon:'⛑️', name:'Helmet', cost:15, desc:'Absorbs 1 crash each run.'},
-  {id:'vest',   type:'Armor',  icon:'🦺', name:'Vest',   cost:30, desc:'Absorbs 2 crashes each run.'},
-  {id:'boots',  type:'Armor',  icon:'🥾', name:'Boots',  cost:20, desc:'Absorbs 1 crash each run.'},
-  {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:25, desc:'Pulls nearby diamonds to you.'},
+  {id:'stick',  type:'Weapon', icon:'🦯', name:'Stick',  cost:60,  desc:'Fast, short swing. Good against low enemies.'},
+  {id:'sword',  type:'Weapon', icon:'🗡️', name:'Sword',  cost:200, desc:'Strong swing. Chops crates, barrels and cacti.'},
+  {id:'chain',  type:'Weapon', icon:'⛓️', name:'Chain',  cost:350, desc:'Long whip that hits at every height.'},
+  {id:'helmet', type:'Armor',  icon:'⛑️', name:'Helmet', cost:80,  desc:'Absorbs 1 crash each run.'},
+  {id:'vest',   type:'Armor',  icon:'🦺', name:'Vest',   cost:150, desc:'Absorbs 2 crashes each run.'},
+  {id:'boots',  type:'Armor',  icon:'🥾', name:'Boots',  cost:100, desc:'Absorbs 1 crash each run.'},
+  {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
+// Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
+// Gems are never added by the page itself; crediting has to come from a server that confirms the payment.
+const PAYMENT_LINKS = {};   // e.g. {pack100: 'https://buy.stripe.com/...'}
+const PACKS = [
+  {id:'pack100',  gems:100,  price:'$0.99',  tag:''},
+  {id:'pack550',  gems:550,  price:'$4.99',  tag:'+10% bonus'},
+  {id:'pack1200', gems:1200, price:'$9.99',  tag:'Best value'},
+  {id:'pack3000', gems:3000, price:'$19.99', tag:'+25% bonus'},
+];
+let shopTab = 'gear';
 let gems, runGems, armor, gemLeft, toastMsg = '';
 let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
@@ -346,21 +363,35 @@ $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
 
 // ---------------------------------------------------------------- shop
-const $items = document.getElementById('items');
+const $items = document.getElementById('items'), $msg = document.getElementById('shopmsg');
 function renderShop() {
   document.getElementById('gemcount').textContent = '💎 ' + save.gems;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === shopTab));
+  if (shopTab === 'gems') {
+    $items.innerHTML = PACKS.map(p => '<div class="card pack"><span class="ic">💎</span><span class="tp">Gem pack</span><b>' + p.gems + '</b><span class="tag">' + p.tag + '</span><small></small><button data-pack="' + p.id + '">' + p.price + '</button></div>').join('');
+    return;
+  }
   $items.innerHTML = SHOP.map(it => {
     const owned = has(it.id), ok = save.gems >= it.cost;
     return '<div class="card' + (owned ? ' owned' : '') + '"><span class="ic">' + it.icon + '</span><span class="tp">' + it.type + '</span><b>' + it.name + '</b><small>' + it.desc +
       '</small><button data-id="' + it.id + '"' + (owned || !ok ? ' disabled' : '') + '>' + (owned ? 'OWNED' : 'BUY 💎 ' + it.cost) + '</button></div>';
   }).join('');
 }
+document.querySelector('#shophead').addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.tab; if (t) { shopTab = t; $msg.textContent = ''; renderShop(); } });
 function openShop() { if ($shopBtn.disabled) return; renderShop(); $shop.classList.remove('hidden'); }
 function closeShop() { $shop.classList.add('hidden'); }
 $shopBtn.addEventListener('click', openShop);
 document.getElementById('shopclose').addEventListener('click', closeShop);
 addEventListener('keydown', e => { if (e.code === 'Escape') closeShop(); });
 $items.addEventListener('click', e => {
+  const pk = e.target.dataset && e.target.dataset.pack;
+  if (pk) {
+    const link = PAYMENT_LINKS[pk];
+    if (!link) { $msg.textContent = 'Payments are not connected yet, so nothing was charged and no gems were added.'; beep(150, .1, 'square', .04); return; }
+    window.open(link, '_blank');
+    $msg.textContent = 'Finish checkout in the new tab. Gems are added once the payment is confirmed.';
+    return;
+  }
   const id = e.target.dataset && e.target.dataset.id; if (!id) return;
   const it = SHOP.find(i => i.id === id);
   if (!it || has(id) || save.gems < it.cost) return;
