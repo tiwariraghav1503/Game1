@@ -172,14 +172,14 @@ const PACKS = [
 ];
 let shopTab = 'gear';
 let gems, runGems, armor, gemLeft, toastMsg = '';
-let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60;
+let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60, minis = [], chip = 0;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
 const keys = {down:false, jump:false, left:false, right:false};
 let touchDown = false, touchJump = false, touchL = false, touchR = false;
 
 function resetGame() {
   player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
-  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; setBossUI(); ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
+  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = MAX_AMMO; ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
@@ -433,16 +433,16 @@ function damagePlayer() {
 function startBoss(i, tier) {
   const d = BOSSES[i % BOSSES.length];
   for (const o of obstacles) dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,200,120,.9)');
-  obstacles = []; eps = []; bullets = []; gems = [];
+  obstacles = []; eps = []; bullets = []; gems = []; minis = []; chip = 0;
   const hp = Math.round(d.hp * (1 + .6 * tier));
-  boss = {d, tier, x:W + 170, y:GROUND, hp, max:hp, t:0, flash:0, hitBy:0, dead:false, dieT:0, sp:0, shots:0, beams:0, charges:0, tx:0, x0:0};
+  boss = {d, tier, x:W + 170, y:GROUND, hp, max:hp, mt:220, t:0, flash:0, hitBy:0, dead:false, dieT:0, sp:0, shots:0, beams:0, charges:0, tx:0, x0:0};
   go(boss, 'enter', 1); bossBanner = 190; setBossUI(); beep(110, .7, 'sawtooth', .08, -40);
 }
 function bossBox(b) { return [b.x - b.d.w / 2 + 8, b.y - b.d.h + 6, b.x + b.d.w / 2 - 8, b.y]; }
 function damageBoss(n) {
   const b = boss; if (!b || b.dead) return;
   b.hp -= n; b.flash = 5; beep(300, .05, 'square', .04);
-  if (b.hp <= 0) { b.dead = true; b.dieT = 0; eps = []; scoreAcc += 500; beep(90, .8, 'sawtooth', .09, -40); }
+  if (b.hp <= 0) { b.dead = true; b.dieT = 0; eps = []; for (const m of minis) dust(m.x, m.y - m.h / 2, 8, 'rgba(255,200,100,.9)'); minis = []; scoreAcc += 500; beep(90, .8, 'sawtooth', .09, -40); }
 }
 function finishBoss() {
   let reward = 30 + 15 * boss.tier, drop = '';
@@ -451,7 +451,7 @@ function finishBoss() {
   else { reward += 40; drop = 'Already own the ' + w.name + ': +40 bonus. '; }
   pow = 100; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
   save.gems += reward; runGems += reward; persist();
-  armor = Math.min(armorMax(), armor + 1); ammo = MAX_AMMO; boss = null; eps = []; supers = []; state = 'wheel'; setBossUI();
+  armor = Math.min(armorMax(), armor + 1); ammo = MAX_AMMO; boss = null; eps = []; supers = []; minis = []; chip = 0; state = 'wheel'; setBossUI();
   showOverlay('BOSS DEFEATED!', drop + '+' + reward + ' 💎 and an armor repair. Spin for your next level.', 'SPIN');
 }
 const epush = o => eps.push(Object.assign({vx:0, vy:0, t:0}, o));
@@ -551,6 +551,51 @@ function sawAI(b, dt, f) {
   else if (b.st === 'rest') { if (b.timer <= 0) go(b, 'retreat', 70); }
   else if (b.st === 'retreat') { b.x = clampX(b.x - b.sd * 4.5 * dt); if (b.timer <= 0) go(b, 'idle', 45 / f); }
 }
+
+// ---------------------------------------------------------------- minions: small copies of the boss that pester you for chip damage
+const MINI_K = .34, CHIP_MAX = 5;   // minion touches needed to equal one real hit
+const MINI_SPEED = {slime:2.8, mecha:3.2, sumo:2.4, saw:4.6};
+function spawnMini() {
+  const d = boss.d;
+  minis.push({d, x:player.x < W / 2 ? W + 30 : -30, y:GROUND, w:d.w * MINI_K, h:d.h * MINI_K, t:Math.random() * 9, stun:0});
+}
+function hurtMinis(x0, y0, x1, y1) {
+  let n = 0;
+  for (const m of minis) {
+    if (m.dead || m.x + m.w / 2 < x0 || m.x - m.w / 2 > x1 || m.y < y0 || m.y - m.h > y1) continue;
+    m.dead = true; n++; pow = Math.min(100, pow + 4);
+    dust(m.x, m.y - m.h / 2, 8, 'rgba(255,230,120,.95)'); beep(420, .06, 'square', .04, 200);
+    gems.push({x:m.x, y:Math.min(GROUND - 14, m.y - 14), t:0, v:1, ttl:420});
+  }
+  if (n) minis = minis.filter(m => !m.dead);
+  return n;
+}
+function updateMinis(dt, f) {
+  for (const m of minis) {
+    m.t += dt;
+    const dir = Math.sign(player.x - m.x) || 1, id = m.d.id;
+    if (m.stun > 0) { m.stun -= dt; }
+    else m.x += dir * MINI_SPEED[id] * f * dt;
+    if (id === 'slime') m.y = GROUND - Math.abs(Math.sin(m.t * .09)) * 34;
+    else if (id === 'mecha') m.y = GROUND - 34 + Math.sin(m.t * .1) * 20;
+    else m.y = GROUND;
+    if (m.stun <= 0 && hitsPlayer(m.x - m.w / 2 + 3, m.y - m.h + 3, m.x + m.w / 2 - 3, m.y)) chipPlayer(m);
+  }
+}
+function chipPlayer(m) {
+  const p = player;
+  if (p.inv > 0 || p.dead || (boss && boss.dead)) return;
+  m.stun = 45; p.x = Math.max(34, Math.min(W - 34, p.x + (p.x < m.x ? -1 : 1) * 26)); m.x += (p.x < m.x ? 1 : -1) * 22;
+  chip++; beep(170, .1, 'square', .05);
+  if (chip >= CHIP_MAX) { chip = 0; damagePlayer(); } else p.inv = 34;
+}
+function drawMinis() {
+  for (const m of minis) {
+    const ps = {d:m.d, x:m.x, y:m.y, st:'idle', t:m.t * 3, timer:0, dur:1, flash:0, dead:false, tx:0, sd:1};
+    ctx.save(); ctx.translate(m.x, m.y); ctx.scale(MINI_K, MINI_K); ctx.translate(-m.x, -m.y);
+    drawBoss(ps); ctx.restore();
+  }
+}
 function updateBoss(dt) {
   const b = boss, f = 1 + .12 * b.tier;
   if (b.flash > 0) b.flash -= dt;
@@ -562,6 +607,9 @@ function updateBoss(dt) {
     return;
   }
   ({slime:slimeAI, mecha:mechaAI, sumo:sumoAI, saw:sawAI})[b.d.id](b, dt, f);
+  b.mt -= dt;
+  if (b.mt <= 0 && b.st !== 'enter') { if (minis.length < 3 + (b.tier > 0 ? 1 : 0)) spawnMini(); b.mt = (340 + Math.random() * 160) / f; }
+  updateMinis(dt, f);
   const bx = bossBox(b), ch = b.d.ch && b.st !== 'rush' ? 0 : (b.d.ch || b.d.h);
   if (ch && hitsPlayer(bx[0], b.y - ch, bx[2], b.y)) damagePlayer();
   // enemy projectiles
@@ -603,6 +651,7 @@ function updateSupers(dt) {
       if (s.x > W + 60 || s.x < -60) s.gone = true;
     }
     const y0 = s.y - s.h / 2, y1 = s.y + s.h / 2;
+    if (boss) hurtMinis(x0, y0, x1, y1);
     for (const o of obstacles) {
       if (o.dead || o.x + o.w < x0 || o.x > x1 || o.y < y0 || o.y - o.h > y1) continue;
       if (isEnemy(o)) killEnemy(o); else { o.dead = true; scoreAcc += 30 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,255,255,.9)'); }
@@ -732,14 +781,14 @@ function update(dt) {
   if (gemLeft <= 0) { if (obstacles.some(o => o.x > W - 160)) gemLeft = 90; else { gemRow(); gemLeft = speed * (70 + Math.random() * 90); } }
   const gph = p.sliding && p.onGround ? 30 : 62;
   for (const g of gems) {
-    g.x -= speed * dt; g.t += dt;
+    g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
     if (has('magnet')) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
     if (Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
       g.got = true; save.gems += g.v; runGems += g.v; pow = Math.min(100, pow + g.v); persist();
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
   }
-  gems = gems.filter(g => !g.got && g.x > -30);
+  gems = gems.filter(g => !g.got && g.x > -30 && (g.ttl === undefined || g.ttl > 0));
   fireCD -= dt; if (p.flash > 0) p.flash -= dt;
   if (ammo < MAX_AMMO) { ammoT += dt * (boss ? 2 : 1); if (ammoT >= AMMO_REGEN) { ammo++; ammoT = 0; } } else ammoT = 0;
   for (const o of obstacles) {
@@ -767,6 +816,7 @@ function update(dt) {
   if (boss && !boss.dead) {
     for (const b of bullets) {
       if (b.gone) continue;
+      if (hurtMinis(Math.min(b.px, b.x), b.y - 5, Math.max(b.px, b.x) + 16, b.y + 5)) { b.gone = true; continue; }
       const bx = bossBox(boss);
       if (Math.max(b.px, b.x) + 16 > bx[0] && Math.min(b.px, b.x) < bx[2] && b.y + 5 > bx[1] && b.y - 5 < bx[3]) { b.gone = true; damageBoss(1); dust(b.x, b.y, 4, 'rgba(255,255,255,.9)'); continue; }
       for (const e of eps) if ((e.kind === 'slime' || e.kind === 'rocket') && !e.dead && Math.abs(b.x + 8 - e.x) < e.w / 2 + 12 && Math.abs(b.y - e.y) < e.h / 2 + 8) { e.dead = true; b.gone = true; dust(e.x, e.y, 6, 'rgba(160,255,160,.9)'); beep(400, .05, 'square', .04); }
@@ -780,6 +830,7 @@ function update(dt) {
       const w = a.w, q = a.t / w.dur, reach = w.id === 'chain' ? w.range * Math.min(1, q * 3) : w.range;
       const zx0 = p.face > 0 ? p.x + 8 : p.x - 8 - reach, zx1 = p.face > 0 ? p.x + 8 + reach : p.x - 8, zy0 = p.y - w.band[1], zy1 = p.y - w.band[0];
       if (boss && !boss.dead) {
+        hurtMinis(zx0, zy0, zx1, zy1);
         const bx = bossBox(boss);
         if (boss.hitBy !== a.id && zx1 > bx[0] && zx0 < bx[2] && zy1 > bx[1] && zy0 < bx[3]) { boss.hitBy = a.id; damageBoss(w.dmg); dust(Math.max(zx0, bx[0]), (zy0 + zy1) / 2, 6, 'rgba(255,255,255,.9)'); }
         for (const e of eps) if (e.kind !== 'beam' && e.kind !== 'wave' && e.x + e.w / 2 > zx0 && e.x - e.w / 2 < zx1 && e.y + e.h / 2 > zy0 && e.y - e.h / 2 < zy1) { e.dead = true; dust(e.x, e.y, 6, 'rgba(255,255,255,.9)'); }
@@ -1249,7 +1300,7 @@ function render() {
   for (const o of obstacles) drawObstacle(o, level);
   for (const q of particles) { ctx.globalAlpha = Math.max(0, q.life / 35); ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1;
-  if (boss) { drawBoss(boss); drawEps(); }
+  if (boss) { drawBoss(boss); drawMinis(); drawEps(); }
   drawSupers();
   for (const g of gems) {
     const by = g.y + Math.sin(g.t * .12) * 3, r = g.v > 1 ? 14 : 10, c = g.v > 1 ? ['#c26bff', '#e6bcff', '#8a3fd1'] : ['#38e1ff', '#c9f7ff', '#1796c7'];
@@ -1307,6 +1358,10 @@ function render() {
     ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
   }
   if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 290, 82, 18); ctx.globalAlpha = 1; }
+  if (boss && !boss.dead) {
+    for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 134, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
+    hudTxt('CHIP', W - 18, 144, 12, 'right');
+  }
   if (boss) {
     const bx = W / 2 - 170, f = Math.max(0, boss.hp / boss.max);
     ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(bx - 3, 10, 346, 20); ctx.fillStyle = f > .5 ? '#ff4d4d' : '#ff9d2e'; ctx.fillRect(bx, 13, 340 * f, 14);
@@ -1332,7 +1387,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
 })();
 </script>
 </body>
