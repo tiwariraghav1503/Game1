@@ -3,7 +3,7 @@ name: Deploy Game to GitHub Pages
 on:
   push:
     branches:
-      - "claude/infinite-runner-wheel-game-jqqxn0"
+      - main
   workflow_dispatch:
 
 permissions:
