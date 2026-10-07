@@ -42,12 +42,12 @@
   .card .tag{font-size:2.8cqh;color:#ffd23f;min-height:3.4cqh}
   #gemcount{font-size:5cqh;font-weight:800;color:#6ef0ff;flex:1}
   #shopclose{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.2cqh 3cqh;border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
-  #items{display:grid;grid-template-columns:repeat(4,1fr);gap:2cqh 1.6cqw;flex:1;min-height:0}
+  #items{display:grid;grid-template-columns:repeat(5,1fr);gap:2cqh 1.2cqw;flex:1;min-height:0}
   .card{background:#1a1f38;border-radius:2cqh;padding:1.6cqh 1.8cqw;display:flex;flex-direction:column;gap:.6cqh;min-height:0;min-width:0}
   .card .ic{font-size:5.2cqh;line-height:1}
   .card .tp{font-size:2.6cqh;letter-spacing:.08em;text-transform:uppercase;opacity:.55}
-  .card b{font-size:3.8cqh}
-  .card small{font-size:2.7cqh;opacity:.8;line-height:1.2;flex:1}
+  .card b{font-size:3.5cqh}
+  .card small{font-size:2.4cqh;opacity:.8;line-height:1.2;flex:1}
   .card button{font:inherit;font-weight:800;font-size:3.3cqh;padding:1cqh 0;border:0;border-radius:1.4cqh;background:#6ef0ff;color:#032031;cursor:pointer}
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
@@ -69,7 +69,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-8 = switch weapon &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
     <div id="shop" class="hidden">
@@ -140,6 +140,10 @@ const WEAPONS = [
   {id:'railgun',     op:true, name:'Plasma Railgun', icon:'🔵', cost:50, cd:26, perk:'Jet hover (hold jump)', desc:'Instant beam across the whole screen.'},
   {id:'titanfist',   op:true, name:'Titan Fist', icon:'👊', cost:40, cd:30, perk:'Bulldozer slide (smash low obstacles)', desc:'Sends a ground quake that wrecks everything.'},
   {id:'reapersaw',   op:true, name:'Reaper Saw', icon:'⚙️', cost:35, cd:24, perk:'Phase dash (E / Shift)', desc:'Boomerang saw that cuts both ways.'},
+  // heavy ranged weapons: spend several ammo per shot
+  {id:'sniper',   ranged:true, ammo:3, cd:42, name:'Sniper Rifle',    icon:'🎯'},
+  {id:'rpg',      ranged:true, ammo:2, cd:38, name:'RPG',             icon:'💥'},
+  {id:'launcher', ranged:true, ammo:3, cd:55, name:'Rocket Launcher', icon:'🚀'},
 ];
 const SOFT = new Set(['crate', 'barrel', 'log', 'cactus', 'cane', 'coral']);   // the sword can chop these
 let weapon = 0, atkId = 0, toast = 0;
@@ -173,6 +177,9 @@ const SHOP = [
   {id:'helmet', type:'Armor',  icon:'⛑️', name:'Helmet', cost:80,  desc:'Absorbs 1 crash each run.'},
   {id:'vest',   type:'Armor',  icon:'🦺', name:'Vest',   cost:150, desc:'Absorbs 2 crashes each run.'},
   {id:'boots',  type:'Armor',  icon:'🥾', name:'Boots',  cost:100, desc:'Absorbs 1 crash each run.'},
+  {id:'sniper',   type:'Weapon', icon:'🎯', name:'Sniper',   cost:250, desc:'Instant long shot through every enemy in line. 3 ammo.'},
+  {id:'rpg',      type:'Weapon', icon:'💥', name:'RPG',      cost:400, desc:'Slow rocket with a big blast. 2 ammo.'},
+  {id:'launcher', type:'Weapon', icon:'🚀', name:'Launcher', cost:500, desc:'Three homing missiles per salvo. 3 ammo.'},
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
 // Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
@@ -296,7 +303,7 @@ function jump() {
   }
 }
 function setWeapon(i) {
-  if (i === weapon) return;
+  if (i === weapon || !WEAPONS[i]) return;
   if (!ownsWeapon(WEAPONS[i])) { toast = 70; toastMsg = WEAPONS[i].name + (WEAPONS[i].op ? ' - dropped by a boss' : ' locked - buy in shop'); beep(120, .08, 'square', .04); return; }
   weapon = i; player.atk = null; toast = 70; toastMsg = WEAPONS[i].name; beep(520, .05, 'triangle', .05);
 }
@@ -308,12 +315,34 @@ function attack() {
   if (boss && !boss.dead && !(keys.left || keys.right || touchL || touchR)) player.face = boss.x < player.x ? -1 : 1;   // auto-face the boss when standing still
   if (weapon === 0) return shoot();
   const w = WEAPONS[weapon];
+  if (w.ranged) return fireRanged(w);
   if (w.op) {
     if (pow < w.cost) { toast = 40; toastMsg = 'Need power'; beep(120, .06, 'square', .04); return; }
     pow -= w.cost; fireCD = w.cd; fireSuper(w); return;
   }
   fireCD = w.cd * CH().melee; player.atk = {w, t:0, id:++atkId};
   beep(w.id === 'chain' ? 160 : 260, .09, 'sawtooth', .04, 220);
+}
+function fireRanged(w) {
+  const p = player;
+  if (ammo < w.ammo) { toast = 40; toastMsg = 'Need ' + w.ammo + ' ammo'; beep(120, .06, 'square', .04); return; }
+  ammo -= w.ammo; fireCD = w.cd; p.flash = 8;
+  const f = p.face, y = p.y - (p.sliding && p.onGround ? 14 : 38), sx = p.x + 38 * f;
+  if (w.id === 'sniper') {
+    let ex = f > 0 ? W + 40 : -40;
+    for (const o of obstacles) {                       // solid obstacles stop the bullet; enemies do not
+      if (o.dead || isEnemy(o) || o.y < y - 5 || o.y - o.h > y + 5) continue;
+      if (f > 0 && o.x + o.w > sx) ex = Math.min(ex, o.x); else if (f < 0 && o.x < sx) ex = Math.max(ex, o.x + o.w);
+    }
+    supers.push({kind:'snipe', x:sx, ex, dir:f, y, h:10, life:12, t:0, fresh:true, dmg:7});
+    shake = 3; beep(1500, .25, 'sawtooth', .07, -1100);
+  } else if (w.id === 'rpg') {
+    supers.push({kind:'rpg', x:sx, y, vx:9 * f, vy:0, dir:f, t:0}); shake = 4; beep(140, .35, 'sawtooth', .08, 160);
+  } else {
+    const base = f > 0 ? 0 : Math.PI;
+    for (const off of [-.6, 0, .6]) supers.push({kind:'missile', x:sx, y, a:base + off * f, dir:f, vx:0, vy:0, t:0, life:170});
+    beep(200, .4, 'sawtooth', .07, 300);
+  }
 }
 function killEnemy(o) {
   pow = Math.min(100, pow + 8); o.dead = true; scoreAcc += 50 * level.mult; ammo = Math.min(maxAmmo(), ammo + 1);
@@ -349,7 +378,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') dash();
   else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') attack();
   else if (e.code === 'KeyQ') nextWeapon();
-  else if (/^Digit[1-8]$/.test(e.code)) setWeapon(+e.code.slice(5) - 1);
+  else if (/^Digit[0-9]$/.test(e.code)) setWeapon(e.code === 'Digit0' ? 9 : +e.code.slice(5) - 1);
+  else if (e.code === 'Minus') setWeapon(10);
   else if (e.code === 'Enter') primary();
   else if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
 });
@@ -669,16 +699,55 @@ function fireSuper(w) {
   const p = player, y = p.y - (p.sliding && p.onGround ? 14 : 38), f = p.face;
   p.flash = 8;
   if (w.id === 'slimecannon') { supers.push({kind:'glob', x:p.x + 36 * f, px:p.x + 36 * f, y, w:48, h:48, vx:12 * f, t:0, dmg:6}); beep(180, .3, 'sine', .08, 200); }
-  else if (w.id === 'railgun') { supers.push({kind:'rail', x:p.x + 30 * f, dir:f, y, w:W, h:40, life:16, t:0, fresh:true, dmg:8}); beep(1200, .35, 'sawtooth', .06, -900); shake = 4; }
+  else if (w.id === 'railgun') { supers.push({kind:'rail', x:p.x + 30 * f, ex:f > 0 ? W + 40 : -40, dir:f, y, w:W, h:40, life:16, t:0, fresh:true, dmg:8}); beep(1200, .35, 'sawtooth', .06, -900); shake = 4; }
   else if (w.id === 'titanfist') { supers.push({kind:'quake', x:p.x + 30 * f, px:p.x + 30 * f, dir:f, y:GROUND - 45, w:70, h:90, vx:15 * f, t:0, dmg:8}); shake = 9; beep(70, .4, 'sawtooth', .09); }
   else { supers.push({kind:'boomer', x:p.x + 30 * f, px:p.x + 30 * f, dir:f, y, w:46, h:46, vx:17 * f, out:true, t:0, dmg:5}); beep(300, .3, 'sawtooth', .06, 300); }
+}
+const rectCircle = (r0, r1, r2, r3, x, y, rad) => { const cx = Math.max(r0, Math.min(x, r2)), cy = Math.max(r1, Math.min(y, r3)); return (x - cx) ** 2 + (y - cy) ** 2 <= rad * rad; };
+function explode(x, y, r, bossDmg) {
+  for (const o of obstacles) {
+    if (o.dead || !rectCircle(o.x, o.y - o.h, o.x + o.w, o.y, x, y, r)) continue;
+    if (isEnemy(o)) killEnemy(o); else { o.dead = true; scoreAcc += 30 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,200,120,.95)'); }
+  }
+  if (boss) hurtMinis(x - r, y - r, x + r, y + r);
+  for (const e of eps) if (e.kind !== 'beam' && e.kind !== 'wave' && !e.dead && Math.hypot(e.x - x, e.y - y) < r + e.w / 2) e.dead = true;
+  if (boss && !boss.dead) { const b = bossBox(boss); if (rectCircle(b[0], b[1], b[2], b[3], x, y, r)) damageBoss(bossDmg); }
+  supers.push({kind:'boom', x, y, r, life:18, t:0}); shake = Math.max(shake, 9); beep(80, .35, 'sawtooth', .1, -30);
+  dust(x, y, 12, 'rgba(255,170,60,.95)');
+}
+function stepMissile(s, dt) {
+  s.px = s.x; s.py = s.y;
+  const isRpg = s.kind === 'rpg', r = isRpg ? 95 : 56;
+  if (!isRpg) {                                         // homing: steer toward the nearest target
+    let best = null, bd = 1e9;
+    const cand = [];
+    for (const o of obstacles) if (!o.dead && isEnemy(o)) cand.push([o.x + o.w / 2, o.y - o.h / 2]);
+    for (const m of minis) cand.push([m.x, m.y - m.h / 2]);
+    if (boss && !boss.dead) { const b = bossBox(boss); cand.push([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]); }
+    for (const c of cand) { const d = Math.hypot(c[0] - s.x, c[1] - s.y); if (d < bd) { bd = d; best = c; } }
+    if (best) { const want = Math.atan2(best[1] - s.y, best[0] - s.x); let da = want - s.a; da = Math.atan2(Math.sin(da), Math.cos(da)); s.a += Math.max(-.16 * dt, Math.min(.16 * dt, da)); }
+    s.vx = Math.cos(s.a) * 8.5; s.vy = Math.sin(s.a) * 8.5; s.life -= dt;
+  }
+  s.x += s.vx * dt; s.y += s.vy * dt;
+  if (Math.random() < .8) dust(s.x - Math.sign(s.vx || 1) * 10, s.y, 1, 'rgba(210,210,210,.55)');
+  const x0 = Math.min(s.px, s.x) - 10, x1 = Math.max(s.px, s.x) + 10, y0 = Math.min(s.py, s.y) - 7, y1 = Math.max(s.py, s.y) + 7;
+  let hit = false, direct = false;
+  for (const o of obstacles) if (!o.dead && o.x + o.w > x0 && o.x < x1 && o.y > y0 && o.y - o.h < y1) hit = true;
+  for (const m of minis) if (m.x + m.w / 2 > x0 && m.x - m.w / 2 < x1 && m.y > y0 && m.y - m.h < y1) hit = true;
+  for (const e of eps) if (e.kind !== 'beam' && e.kind !== 'wave' && !e.dead && e.x + e.w / 2 > x0 && e.x - e.w / 2 < x1 && e.y + e.h / 2 > y0 && e.y - e.h / 2 < y1) hit = true;
+  if (boss && !boss.dead) { const b = bossBox(boss); if (b[2] > x0 && b[0] < x1 && b[3] > y0 && b[1] < y1) { hit = true; direct = true; } }
+  if (s.y >= GROUND - 4) hit = true;
+  if (hit) { explode(s.x, s.y, r, isRpg ? (direct ? 5 : 3) : (direct ? 3 : 1)); s.gone = true; return; }
+  if (s.x < -60 || s.x > W + 60 || s.y < -80 || (!isRpg && s.life <= 0)) s.gone = true;
 }
 function updateSupers(dt) {
   const p = player;
   for (const s of supers) {
     s.t += dt;
+    if (s.kind === 'boom') { s.life -= dt; if (s.life <= 0) s.gone = true; continue; }
+    if (s.kind === 'rpg' || s.kind === 'missile') { stepMissile(s, dt); continue; }
     let x0, x1;
-    if (s.kind === 'rail') { x0 = s.dir > 0 ? s.x : -40; x1 = s.dir > 0 ? W + 40 : s.x; s.life -= dt; if (!s.fresh) { if (s.life <= 0) s.gone = true; continue; } }
+    if (s.kind === 'rail' || s.kind === 'snipe') { x0 = Math.min(s.x, s.ex); x1 = Math.max(s.x, s.ex); s.life -= dt; if (!s.fresh) { if (s.life <= 0) s.gone = true; continue; } }
     else {
       s.px = s.x; s.x += s.vx * dt;
       if (s.kind === 'boomer' && s.out && (s.dir > 0 ? s.x >= W - 110 : s.x <= 110)) { s.out = false; s.vx = -17 * s.dir; s.bossHit = false; }
@@ -690,6 +759,7 @@ function updateSupers(dt) {
     if (boss) hurtMinis(x0, y0, x1, y1);
     for (const o of obstacles) {
       if (o.dead || o.x + o.w < x0 || o.x > x1 || o.y < y0 || o.y - o.h > y1) continue;
+      if (s.kind === 'snipe' && !isEnemy(o)) continue;
       if (isEnemy(o)) killEnemy(o); else { o.dead = true; scoreAcc += 30 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,255,255,.9)'); }
       beep(220, .08, 'square', .04);
     }
@@ -701,7 +771,7 @@ function updateSupers(dt) {
         if (s.kind === 'glob') s.gone = true;
       }
     }
-    if (s.kind === 'rail') s.fresh = false;
+    if (s.kind === 'rail' || s.kind === 'snipe') s.fresh = false;
   }
   supers = supers.filter(s => !s.gone);
 }
@@ -716,6 +786,23 @@ function drawSupers() {
       const rx = s.dir > 0 ? s.x : s.x - W;
       ctx.fillStyle = 'rgba(40,200,255,' + a * .6 + ')'; ctx.fillRect(rx, s.y - 20 * a - 6, W, 40 * a + 12);
       ctx.fillStyle = 'rgba(255,255,255,' + a + ')'; ctx.fillRect(rx, s.y - 6 * a, W, 12 * a);
+    } else if (s.kind === 'snipe') {
+      const a = Math.max(0, s.life / 12), x0 = Math.min(s.x, s.ex), len = Math.abs(s.ex - s.x);
+      ctx.fillStyle = 'rgba(255,240,180,' + a * .35 + ')'; ctx.fillRect(x0, s.y - 6 * a - 2, len, 12 * a + 4);
+      ctx.fillStyle = 'rgba(255,255,255,' + a + ')'; ctx.fillRect(x0, s.y - 1.5, len, 3);
+    } else if (s.kind === 'rpg') {
+      ctx.translate(s.x, s.y); if (s.dir < 0) ctx.scale(-1, 1);
+      ctx.fillStyle = '#ff9d2e'; ctx.beginPath(); ctx.moveTo(-14, -4); ctx.lineTo(-34 - Math.sin(s.t * 2) * 5, 0); ctx.lineTo(-14, 4); ctx.fill();
+      ctx.fillStyle = '#5b6b48'; ctx.fillRect(-14, -5, 22, 10); ctx.fillStyle = '#c8442f'; ctx.beginPath(); ctx.moveTo(8, -7); ctx.lineTo(22, 0); ctx.lineTo(8, 7); ctx.fill();
+    } else if (s.kind === 'missile') {
+      ctx.translate(s.x, s.y); ctx.rotate(s.a);
+      ctx.fillStyle = '#ffd25e'; ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-22 - Math.sin(s.t * 2) * 4, 0); ctx.lineTo(-8, 3); ctx.fill();
+      ctx.fillStyle = '#dfe4ee'; ctx.fillRect(-8, -3.5, 16, 7); ctx.fillStyle = '#e63946'; ctx.beginPath(); ctx.moveTo(8, -3.5); ctx.lineTo(15, 0); ctx.lineTo(8, 3.5); ctx.fill();
+    } else if (s.kind === 'boom') {
+      const q = 1 - s.life / 18, r = s.r * (.3 + .7 * q);
+      const g = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, r); g.addColorStop(0, 'rgba(255,255,220,' + (1 - q) + ')'); g.addColorStop(.5, 'rgba(255,170,50,' + (.85 - q * .85) + ')'); g.addColorStop(1, 'rgba(255,70,20,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,230,180,' + (1 - q) + ')'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(s.x, s.y, r * .95, 0, 7); ctx.stroke();
     } else if (s.kind === 'quake') {
       ctx.fillStyle = '#e6b84a'; for (let i = 0; i < 5; i++) { const bx = s.x - i * 18 * s.dir, hh = 70 - i * 10; ctx.beginPath(); ctx.moveTo(bx - 14, GROUND); ctx.lineTo(bx, GROUND - hh); ctx.lineTo(bx + 14, GROUND); ctx.fill(); }
       ctx.fillStyle = 'rgba(255,240,180,.5)'; ctx.fillRect(s.dir > 0 ? s.x - 90 : s.x - 10, GROUND - 8, 100, 8);
@@ -1178,10 +1265,20 @@ function drawPlayer(p) {
     ctx.fillStyle = '#19d3ff'; ctx.fillRect(gx + 17, gy - 3, 5, 6);
     if (p.flash > 0) { ctx.fillStyle = 'rgba(180,250,255,.9)'; ctx.beginPath(); ctx.arc(gx + 26, gy, 6 + p.flash, 0, 7); ctx.fill(); }
   };
+  const R = (rx, ry, rw, rh, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, r); ctx.fill(); };
+  const E = (cx, cy, rx, ry, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, 7); ctx.fill(); };
+  const L = (x0, y0, x1, y1, lw, c) => { ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
   const held = (gx, gy) => {
     if (pt) return;
     const w = WEAPONS[weapon], at = p.atk;
     if (w.id === 'gun') return gun(gx, gy);
+    if (w.ranged) {
+      if (w.id === 'sniper') { R(gx - 8, gy - 3, 50, 6, 2, '#2b3140'); R(gx + 6, gy - 10, 18, 6, 3, '#111'); E(gx + 24, gy - 7, 2.5, 2.5, '#38e1ff'); R(gx - 10, gy - 1, 10, 9, 2, '#5a4a3a'); L(gx + 30, gy + 3, gx + 24, gy + 12, 2, '#444'); L(gx + 34, gy + 3, gx + 40, gy + 12, 2, '#444'); }
+      else if (w.id === 'rpg') { R(gx - 14, gy - 8, 54, 14, 5, '#566640'); ctx.fillStyle = '#c8442f'; ctx.beginPath(); ctx.moveTo(gx + 40, gy - 8); ctx.lineTo(gx + 54, gy - 1); ctx.lineTo(gx + 40, gy + 6); ctx.fill(); R(gx + 4, gy + 6, 5, 9, 2, '#333'); R(gx - 4, gy - 13, 10, 5, 2, '#222'); }
+      else { R(gx - 8, gy - 12, 42, 24, 4, '#515a6c'); for (let i = 0; i < 3; i++) { E(gx + 34, gy - 7 + i * 7, 4.2, 4.2, '#14182a'); E(gx + 34, gy - 7 + i * 7, 2, 2, '#e63946'); } R(gx + 2, gy + 12, 5, 8, 2, '#333'); }
+      if (p.flash > 0) { ctx.fillStyle = 'rgba(255,230,160,.9)'; ctx.beginPath(); ctx.arc(gx + 52, gy, 6 + p.flash, 0, 7); ctx.fill(); }
+      return;
+    }
     const q = at ? Math.min(1, at.t / w.dur) : -1;
     if (w.id === 'sword' || w.id === 'stick') {
       const sw = w.id === 'sword';
@@ -1208,11 +1305,11 @@ function drawPlayer(p) {
       if (p.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(gx + 34, gy, 6 + p.flash, 0, 7); ctx.fill(); }
       return;
     }
-    const ext = q < 0 ? 0 : (q < .5 ? q * 2 : (1 - q) * 2), L = q < 0 ? 26 : 26 + (w.range - 26) * ext, n = 14;
+    const ext = q < 0 ? 0 : (q < .5 ? q * 2 : (1 - q) * 2), CL = q < 0 ? 26 : 26 + (w.range - 26) * ext, n = 14;
     ctx.fillStyle = '#c3cad6'; ctx.strokeStyle = '#c3cad6'; ctx.lineWidth = 2;
     for (let i = 0; i <= n; i++) {
       const t = i / n;
-      const cx = q < 0 ? gx + Math.sin(t * 2 + clock * .1) * 4 : gx + t * L;
+      const cx = q < 0 ? gx + Math.sin(t * 2 + clock * .1) * 4 : gx + t * CL;
       const cy = q < 0 ? gy + t * 26 : gy + Math.sin(t * 9 - clock * .6) * 5 * ext;
       ctx.beginPath(); ctx.arc(cx, cy, i === n ? 7 : 2.6, 0, 7); ctx.fill();
       if (i === n) for (let k = 0; k < 8; k++) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(k * .785) * 11, cy + Math.sin(k * .785) * 11); ctx.stroke(); }
@@ -1483,6 +1580,7 @@ function render() {
     const f = i < ammo ? 1 : i === ammo ? ammoT / AMMO_REGEN : 0;
     ctx.fillStyle = '#19d3ff'; ctx.fillRect(px, 62, 18 * f, 9);
   }
+  if (WEAPONS[weapon].ammo) hudTxt('x' + WEAPONS[weapon].ammo + ' per shot', 22 + maxAmmo() * 22, 60, 13);
   for (let i = 0; i < WEAPONS.length; i++) {
     const wx = 18 + i * 34, sel = i === weapon;
     ctx.fillStyle = sel ? 'rgba(255,210,63,.85)' : 'rgba(0,0,0,.45)'; ctx.fillRect(wx, 78, 30, 26);
@@ -1499,7 +1597,7 @@ function render() {
     const perks = [['slimecannon', '🦘'], ['railgun', '🚀'], ['titanfist', '🚜'], ['reapersaw', '⚡']].filter(k => has(k[0]));
     ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
   }
-  if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 290, 82, 18); ctx.globalAlpha = 1; }
+  if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 410, 82, 18); ctx.globalAlpha = 1; }
   if (boss && !boss.dead) {
     for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 134, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
     hudTxt('CHIP', W - 18, 144, 12, 'right');
