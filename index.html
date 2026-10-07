@@ -480,6 +480,21 @@ function gemRow() {
   if (big) { const g = gems[gems.length - 1 - Math.floor(Math.random() * 4)]; g.v = 5; }
 }
 
+// A diamond may never sit inside an obstacle. Ground obstacles lift it onto an arc above their top (only if the
+// jump can still reach it); anything else (air enemies, meteors, too-tall spires) removes it.
+const GEM_MIN_Y = GROUND - 126;
+function keepGemClear(g) {
+  if (g.got || boss) return;
+  for (let pass = 0; pass < 3; pass++) {
+    const o = obstacles.find(o => !o.dead && g.x + 10 > o.x - 4 && g.x - 10 < o.x + o.w + 4 && g.y + 10 > o.y - o.h - 4 && g.y - 10 < o.y + 4);
+    if (!o) return;
+    const ny = o.y - o.h - 14;
+    if ((o.kind === 'air' || o.kind === 'meteor' || o.kind === 'hopper') || ny < GEM_MIN_Y) { g.got = true; g.silent = true; return; }
+    g.y = ny;
+  }
+  g.got = true; g.silent = true;
+}
+
 // ---------------------------------------------------------------- bosses (one every 10 levels, cycling through four)
 const BOSSES = [
   {id:'slime', name:'SLIME KING',     hp:26, w:130, h:100, drop:'slimecannon'},
@@ -905,8 +920,9 @@ function update(dt) {
   const gph = p.sliding && p.onGround ? 30 : 62;
   for (const g of gems) {
     g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
+    keepGemClear(g);
     if (has('magnet') || CH().magnet) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
-    if (Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
+    if (!g.got && Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
       g.got = true; const gain = Math.floor(g.v * CH().gem + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist();
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
@@ -1627,7 +1643,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, get supers(){return supers}};
 })();
 </script>
 </body>
