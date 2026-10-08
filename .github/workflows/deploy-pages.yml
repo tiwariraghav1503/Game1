@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "claude/infinite-runner-wheel-game-jqqxn0"
+      - "claude/action-game-joystick-weapons-7zv2f9"
   workflow_dispatch:
 
 permissions:
