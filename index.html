@@ -864,14 +864,14 @@ $items.addEventListener('click', e => {
 // ---------------------------------------------------------------- gems
 function gemArc(x0, w, topY) {
   const n = 5;
-  for (let i = 0; i < n; i++) gems.push({x:x0 - 8 + i * (w + 36) / (n - 1), y:Math.max(GROUND - 126, topY - 22 - Math.sin(Math.PI * i / (n - 1)) * 30), t:Math.random() * 9, v:1});
+  for (let i = 0; i < n; i++) gems.push({x:x0 - 8 + i * (w + 36) / (n - 1), y:Math.max(GROUND - 126, topY - 22 - Math.sin(Math.PI * i / (n - 1)) * 30), t:rng() * 9, v:1});
 }
 function gemRow() {
-  const r = Math.random(), x0 = W + 40, big = Math.random() < .12;
+  const r = rng(), x0 = W + 40, big = rng() < .12;
   if (r < .4) for (let i = 0; i < 6; i++) gems.push({x:x0 + i * 34, y:GROUND - 24, t:i, v:1});
   else if (r < .7) for (let i = 0; i < 5; i++) gems.push({x:x0 + i * 34, y:GROUND - 96, t:i, v:1});
   else for (let i = 0; i < 8; i++) gems.push({x:x0 + i * 32, y:GROUND - 66 - Math.sin(i * .8) * 34, t:i, v:1});
-  if (big) { const g = gems[gems.length - 1 - Math.floor(Math.random() * 4)]; g.v = 5; }
+  if (big) { const g = gems[gems.length - 1 - Math.floor(rng() * 4)]; g.v = 5; }
 }
 
 // A diamond may never sit inside an obstacle. Ground obstacles lift it onto an arc above their top (only if the
@@ -1231,34 +1231,65 @@ function drawSupers() {
 // ---------------------------------------------------------------- obstacles
 const SIZES = {rock:[44,34], crate:[46,46], cactus:[30,64], fire:[38,72], crystal:[36,58], tallrock:[50,98], spire:[40,112], alien:[38,58], log:[66,30], spikes:[58,24], tomb:[42,62], barrel:[38,46], cane:[30,74], coral:[42,58], urchin:[36,36], zombie:[36,66], snake:[54,22], crab:[44,28], hopper:[38,38]};
 const ENEMY_VX = {alien:2.6, zombie:2, snake:1.8, crab:3.2, hopper:1.6};
+// Hand-built obstacle patterns, scaled to how far a jump carries at the current speed, so they stay fair at every speed and gravity.
+let patSpan = 0, lastPat = '', patternsOn = true, forcePat = '', patChance = .38;
+function spawnPattern() {
+  const solid = level.ground_.filter(k => !(k in ENEMY_VX)), kinds = solid.length ? solid : level.ground_;
+  const J = speed * 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);          // horizontal distance of one full jump
+  const pick = () => kinds[Math.floor(rng() * kinds.length)];
+  const put = (k, x) => { const [w, h] = SIZES[k]; obstacles.push({kind:k, x, y:GROUND, w, h, t:rng() * 6, vx:ENEMY_VX[k] || 0}); return w; };
+  const names = ['pair', 'rhythm', 'stairs'].concat(level.air === 'ufo' ? [] : ['gauntlet']).filter(n => n !== lastPat);
+  const name = forcePat || names[Math.floor(rng() * names.length)]; lastPat = name;
+  const x0 = W + 60; let x = x0, end = x0;
+  const fits = w => w <= .5 * J;                              // everything cleared by one jump must fit in half a jump, so there is room to mistime it
+  if (name === 'pair') {                                      // two obstacles close enough to clear in one jump
+    const k1 = pick(), k2 = pick(), w1 = SIZES[k1][0], w2 = SIZES[k2][0];
+    if (!fits(w1 + w2 + 8)) return false;
+    x += put(k1, x) + Math.min(.1 * J, .5 * J - w1 - w2); end = x + put(k2, x);
+  } else if (name === 'rhythm') {                             // three jumps in a steady beat
+    for (let i = 0; i < 3; i++) { const w = put(pick(), x); end = x + w; x += 1.5 * J; }
+  } else if (name === 'stairs') {                             // small, tall, small: one long jump
+    const byH = kinds.slice().sort((a, b) => SIZES[a][1] - SIZES[b][1]), lo = byH[0], hi = byH[byH.length - 1];
+    if (!fits(SIZES[lo][0] * 2 + SIZES[hi][0] + 8)) return false;
+    x += put(lo, x) + 4; x += put(hi, x) + 4; end = x + put(lo, x);
+  } else {                                                    // gauntlet: jump, slide under a low flyer, jump
+    put(pick(), x); const ax = x + 1.35 * J;
+    obstacles.push({kind:'air', x:ax, y:GROUND - 34, base:level.wob ? GROUND - 34 : undefined, amp:level.wob || 0, w:46, h:26, t:rng() * 6});
+    const gx = x + 2.4 * J; end = gx + put(pick(), gx);
+  }
+  patSpan = Math.max(0, end - x0);
+  return true;
+}
 function spawn() {
-  const air = Math.random() < level.airP;
+  const air = rng() < level.airP;
   if (air && level.air === 'ufo') {
-    const r = Math.random();
+    const r = rng();
     if (r < .35) {            // meteor: falls from the sky and lands ahead of the runner
-      const lx = 170 + Math.random() * 140, f = (W + 30 - lx) / speed;
+      const lx = 170 + rng() * 140, f = (W + 30 - lx) / speed;
       obstacles.push({kind:'meteor', x:W + 30, y:-30, w:34, h:34, vy:(GROUND + 12) / f, t:0});
     } else if (r < .7) {      // high UFO: punishes big jumps, you must hop low or wait
-      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 100, base:GROUND - 100, w:56, h:30, t:Math.random() * 6});
+      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 100, base:GROUND - 100, w:56, h:30, t:rng() * 6});
     } else {                  // low UFO: slide under
-      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 34, base:GROUND - 34, w:56, h:26, t:Math.random() * 6});
+      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 34, base:GROUND - 34, w:56, h:26, t:rng() * 6});
     }
   } else if (air) {
-    const by = level.hiAir && Math.random() < .4 ? GROUND - 98 : GROUND - 34;
-    obstacles.push({kind:'air', x:W + 60, y:by, base:level.wob ? by : undefined, amp:level.wob || 0, w:46, h:26, t:Math.random() * 6});
+    const by = level.hiAir && rng() < .4 ? GROUND - 98 : GROUND - 34;
+    obstacles.push({kind:'air', x:W + 60, y:by, base:level.wob ? by : undefined, amp:level.wob || 0, w:46, h:26, t:rng() * 6});
+  } else if (patternsOn && rng() < patChance && spawnPattern()) {
+    // a hand-built pattern was placed
   } else {
-    const kinds = level.ground_, cluster = Math.random() < .2 ? 2 : 1;
+    const kinds = level.ground_, cluster = rng() < .2 ? 2 : 1;
     let x = W + 60;
     for (let i = 0; i < cluster; i++) {
-      const k = kinds[Math.floor(Math.random() * kinds.length)], [w, h] = SIZES[k];
-      obstacles.push({kind:k, x, y:GROUND, w, h, t:Math.random() * 6, vx:ENEMY_VX[k] || 0});
+      const k = kinds[Math.floor(rng() * kinds.length)], [w, h] = SIZES[k];
+      obstacles.push({kind:k, x, y:GROUND, w, h, t:rng() * 6, vx:ENEMY_VX[k] || 0});
       x += w + 2;
     }
-    if (Math.random() < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
+    if (rng() < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
   }
   const airtime = 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);
   const gx = level.gapX || [14, 48];
-  spawnLeft = speed * (airtime + gx[0] + Math.random() * (gx[1] - gx[0]));
+  spawnLeft = speed * (airtime + gx[0] + rng() * (gx[1] - gx[0])) + patSpan; patSpan = 0;
 }
 
 function hit(o) {
@@ -2274,7 +2305,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
