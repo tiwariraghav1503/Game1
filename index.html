@@ -7,16 +7,16 @@
 <style>
   html,body{margin:0;height:100%;background:#0b0d17;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
   #wrap{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
-  #stage{position:relative;width:min(100vw,calc(100vh*900/420));aspect-ratio:900/420;container-type:size;background:#000;box-shadow:0 0 40px #000a}
+  #stage{position:relative;overflow:hidden;width:min(100vw,calc(100vh*900/420));aspect-ratio:900/420;container-type:size;background:#000;box-shadow:0 0 40px #000a}
   canvas#game{width:100%;height:100%;display:block}
   #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:5cqw;background:rgba(5,7,20,.72);backdrop-filter:blur(2px)}
   #overlay.hidden{display:none}
   #wheel{height:88cqh;aspect-ratio:1;max-width:46cqw}
-  #panel{display:flex;flex-direction:column;align-items:flex-start;gap:2.4cqh;max-width:38cqw}
-  #ptitle{margin:0;font-size:9cqh;line-height:1;letter-spacing:.02em;text-shadow:0 .5cqh 0 #0006}
-  #ptext{margin:0;font-size:4.4cqh;line-height:1.3;opacity:.9}
-  #result{margin:0;font-size:6cqh;font-weight:800;min-height:7cqh}
-  #btn{font:inherit;font-weight:800;font-size:5.5cqh;padding:1.6cqh 4cqh;border:0;border-radius:99px;background:linear-gradient(#ffd23f,#ff9f1c);color:#2b1700;cursor:pointer;box-shadow:0 .8cqh 0 #b36b00;transition:transform .08s}
+  #panel{display:flex;flex-direction:column;align-items:flex-start;gap:1.5cqh;max-width:40cqw;max-height:96cqh}
+  #ptitle{margin:0;font-size:8cqh;line-height:1;letter-spacing:.02em;text-shadow:0 .5cqh 0 #0006}
+  #ptext{margin:0;font-size:3.8cqh;line-height:1.25;opacity:.9}
+  #result{margin:0;font-size:4.4cqh;font-weight:800;line-height:1.15;min-height:0}
+  #btn{font:inherit;font-weight:800;font-size:5cqh;padding:1.2cqh 3.4cqh;border:0;border-radius:99px;background:linear-gradient(#ffd23f,#ff9f1c);color:#2b1700;cursor:pointer;box-shadow:0 .8cqh 0 #b36b00;transition:transform .08s}
   #btn:active{transform:translateY(.6cqh);box-shadow:0 .2cqh 0 #b36b00}
   #btn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #fire{position:absolute;right:3cqw;bottom:6cqh;width:15cqh;height:15cqh;border-radius:50%;border:0;background:radial-gradient(#7ff,#09a);color:#012;font:800 3.4cqh system-ui;box-shadow:0 .8cqh 0 #056,0 0 3cqh #0cf8;opacity:.8;touch-action:none}
@@ -31,36 +31,36 @@
   #shopBtn{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.6cqh 3cqh;border:0;border-radius:99px;background:linear-gradient(#6ef0ff,#16a6d9);color:#032031;cursor:pointer;box-shadow:0 .8cqh 0 #0b6a8f}
   #shopBtn:active{transform:translateY(.6cqh);box-shadow:0 .2cqh 0 #0b6a8f}
   #shopBtn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
-  #shop{position:absolute;inset:0;display:flex;flex-direction:column;gap:2cqh;padding:3cqh 4cqw;box-sizing:border-box;background:rgba(6,8,22,.95)}
+  #shop{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;gap:calc(var(--u) * 2);padding:calc(var(--u) * 3) 4vw;box-sizing:border-box;background:#070a1a;--u:clamp(5px,1.15vmin,8px);overflow:hidden}
   #shop.hidden{display:none}
-  #shophead{display:flex;align-items:center;gap:3cqw}
-  #shophead h2{margin:0 1cqw 0 0;font-size:7cqh;line-height:1}
-  .tab{font:inherit;font-weight:800;font-size:3.6cqh;padding:1cqh 2.4cqh;border:0;border-radius:99px;background:#232842;color:#9fa8cc;cursor:pointer}
+  #shophead{display:flex;align-items:center;flex-wrap:wrap;gap:calc(var(--u) * 1.2) 2.4vw;flex:none}
+  #shophead h2{margin:0 1cqw 0 0;font-size:calc(var(--u) * 7);line-height:1}
+  .tab{font:inherit;font-weight:800;font-size:calc(var(--u) * 3.6);padding:calc(var(--u) * 1) calc(var(--u) * 2.4);border:0;border-radius:99px;background:#232842;color:#9fa8cc;cursor:pointer}
   .tab.on{background:#6ef0ff;color:#032031}
-  #shopmsg{font-size:3.2cqh;min-height:4cqh;color:#ffd23f}
-  .card.pack b{font-size:5cqh;color:#6ef0ff}
-  .port{height:14cqh;width:auto;align-self:flex-start}
-  .card .tag{font-size:2.8cqh;color:#ffd23f;min-height:3.4cqh}
-  #gemcount{font-size:5cqh;font-weight:800;color:#6ef0ff;flex:1}
-  #shopclose{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.2cqh 3cqh;border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
-  #items{display:grid;grid-template-columns:repeat(5,1fr);gap:2cqh 1.2cqw;flex:1;min-height:0}
-  .card{background:#1a1f38;border-radius:2cqh;padding:1.6cqh 1.8cqw;display:flex;flex-direction:column;gap:.6cqh;min-height:0;min-width:0}
-  .card .ic{font-size:5.2cqh;line-height:1}
-  .card .tp{font-size:2.6cqh;letter-spacing:.08em;text-transform:uppercase;opacity:.55}
-  .card b{font-size:3.5cqh}
-  .card small{font-size:2.4cqh;opacity:.8;line-height:1.2;flex:1}
-  .card button{font:inherit;font-weight:800;font-size:3.3cqh;padding:1cqh 0;border:0;border-radius:1.4cqh;background:#6ef0ff;color:#032031;cursor:pointer}
+  #shopmsg{font-size:calc(var(--u) * 3.2);min-height:calc(var(--u) * 4);color:#ffd23f}
+  .card.pack b{font-size:calc(var(--u) * 5);color:#6ef0ff}
+  .port{height:calc(var(--u) * 14);width:auto;align-self:flex-start}
+  .card .tag{font-size:calc(var(--u) * 2.8);color:#ffd23f;min-height:calc(var(--u) * 3.4)}
+  #gemcount{white-space:nowrap;font-size:calc(var(--u) * 5);font-weight:800;color:#6ef0ff;flex:1}
+  #shopclose{font:inherit;font-weight:800;font-size:calc(var(--u) * 4.4);padding:calc(var(--u) * 1.2) calc(var(--u) * 3);border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
+  #items{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(15vw,calc(var(--u) * 30)),1fr));grid-auto-rows:min-content;align-content:start;gap:calc(var(--u) * 2) 1.4vw;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch;padding:0 .4vw calc(var(--u) * 2) 0}
+  .card{background:#1a1f38;border-radius:calc(var(--u) * 2);padding:calc(var(--u) * 1.8) calc(var(--u) * 2);display:flex;flex-direction:column;gap:calc(var(--u) * .8);min-width:0;box-sizing:border-box}
+  .card .ic{font-size:calc(var(--u) * 5.2);line-height:1}
+  .card .tp{font-size:calc(var(--u) * 2.6);letter-spacing:.08em;text-transform:uppercase;opacity:.55}
+  .card b{font-size:calc(var(--u) * 3.5);overflow-wrap:anywhere;line-height:1.1}
+  .card small{font-size:calc(var(--u) * 2.4);opacity:.8;line-height:1.25;flex:1;overflow-wrap:anywhere}
+  .card button{font:inherit;font-weight:800;font-size:calc(var(--u) * 3.3);padding:calc(var(--u) * 1) .6vw;border:0;border-radius:calc(var(--u) * 1.4);background:#6ef0ff;color:#032031;cursor:pointer;white-space:nowrap;margin-top:auto;flex:none}
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
-  #keys{font-size:3.2cqh;opacity:.6}
+  #keys{font-size:2.3cqh;line-height:1.25;opacity:.6}
   #resetBtn{font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid rgba(255,120,120,.7);border-radius:99px;background:transparent;color:#ff9a9a;cursor:pointer;align-self:flex-start}
   #rstrow{display:flex;gap:1.4cqw;flex-wrap:wrap}
   #restoreBtn{display:none;font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid #6dffb0;border-radius:99px;background:rgba(109,255,176,.15);color:#6dffb0;cursor:pointer}
   #resetBtn.armed{background:#d93a3a;color:#fff;border-color:#d93a3a}
-  #heropick{display:flex;align-items:center;gap:1.4cqw;background:rgba(255,255,255,.1);border-radius:2cqh;padding:1cqh 1.6cqw}
-  #heropick .arr{font:inherit;font-weight:800;font-size:4.4cqh;width:6cqh;height:6cqh;border:0;border-radius:50%;background:#ffd23f;color:#2b1700;cursor:pointer}
+  #heropick{display:flex;align-items:center;gap:1.4cqw;background:rgba(255,255,255,.1);border-radius:2cqh;padding:.7cqh 1.6cqw}
+  #heropick .arr{font:inherit;font-weight:800;font-size:3.8cqh;width:5.4cqh;height:5.4cqh;border:0;border-radius:50%;background:#ffd23f;color:#2b1700;cursor:pointer}
   #heropick .arr:disabled{background:#303652;color:#8a93b5;cursor:default}
-  #hport{width:8cqh;height:11cqh}
+  #hport{width:6.6cqh;height:9cqh}
   #hname{display:flex;flex-direction:column;min-width:13cqw}
   #hname b{font-size:3.6cqh}
   #hname small{font-size:2.3cqh;opacity:.75;line-height:1.2}
@@ -87,11 +87,11 @@
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank (shop) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
-    <div id="shop" class="hidden">
-      <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="heroes">HEROES</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
-      <div id="shopmsg"></div>
-      <div id="items"></div>
-    </div>
+  </div>
+  <div id="shop" class="hidden">
+    <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="heroes">HEROES</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
+    <div id="shopmsg"></div>
+    <div id="items"></div>
   </div>
 </div>
 
