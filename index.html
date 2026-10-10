@@ -53,6 +53,8 @@
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:3.2cqh;opacity:.6}
   #resetBtn{font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid rgba(255,120,120,.7);border-radius:99px;background:transparent;color:#ff9a9a;cursor:pointer;align-self:flex-start}
+  #rstrow{display:flex;gap:1.4cqw;flex-wrap:wrap}
+  #restoreBtn{display:none;font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid #6dffb0;border-radius:99px;background:rgba(109,255,176,.15);color:#6dffb0;cursor:pointer}
   #resetBtn.armed{background:#d93a3a;color:#fff;border-color:#d93a3a}
   #heropick{display:flex;align-items:center;gap:1.4cqw;background:rgba(255,255,255,.1);border-radius:2cqh;padding:1cqh 1.6cqw}
   #heropick .arr{font:inherit;font-weight:800;font-size:4.4cqh;width:6cqh;height:6cqh;border:0;border-radius:50%;background:#ffd23f;color:#2b1700;cursor:pointer}
@@ -79,7 +81,7 @@
         <p id="result"></p>
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
-        <button id="resetBtn">RESET TO LEVEL 1</button>
+        <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
@@ -300,7 +302,7 @@ function showOverlay(title, text, btn) {
   $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false;
   $result.textContent = ''; wheelWin = -1;
   overlay.classList.remove('hidden');
-  renderPicker(); disarmReset();
+  renderPicker(); disarmReset(); renderRestore();
 }
 
 // ---------------------------------------------------------------- input
@@ -453,12 +455,28 @@ $reset.addEventListener('click', () => {
     $reset.classList.add('armed'); $reset.textContent = 'TAP AGAIN: ERASES EVERYTHING'; resetTimer = setTimeout(disarmReset, 4000); return;
   }
   disarmReset();
+  const hasProgress = save.gems > 0 || Object.keys(save.owned).length > 0 || best > 0;     // never overwrite a backup with an empty save
+  if (hasProgress) { try { localStorage.setItem('wheelrunner.backup', JSON.stringify({save, best})); } catch (e) {} }
   save = {gems:0, owned:{}, hero:'runner'}; persist();
   best = 0; try { localStorage.removeItem('wheelrunner.best'); } catch (e) {}
   resetGame(); levelIdx = 0; level = LEVELS[0]; weapon = 0; toast = 0; state = 'title';
   refreshButtons(); beep(200, .3, 'sawtooth', .06, -100);
-  showOverlay('WHEEL RUNNER', 'Progress erased. Back to level 1 with nothing but the starter blaster.', 'SPIN THE WHEEL');
+  showOverlay('WHEEL RUNNER', 'Progress erased. Back to level 1 with nothing but the starter blaster. You can restore it below.', 'SPIN THE WHEEL');
 });
+// Undo for the reset: merges the erased save back in (gems add up, items union, best score = higher) so nothing earned since is lost.
+const $restore = document.getElementById('restoreBtn');
+const readBackup = () => { try { const j = JSON.parse(localStorage.getItem('wheelrunner.backup') || 'null'); return j && j.save ? j : null; } catch (e) { return null; } };
+function renderRestore() { $restore.style.display = readBackup() ? 'inline-block' : 'none'; }
+$restore.addEventListener('click', () => {
+  const b = readBackup(); if (!b || !$shop.classList.contains('hidden')) return;
+  save.gems += +b.save.gems || 0; save.owned = Object.assign({}, b.save.owned || {}, save.owned);
+  if (state === 'title' || state === 'over') save.hero = b.save.hero || save.hero;      // heroes stay locked in mid-run
+  best = Math.max(best, +b.best || 0); try { localStorage.setItem('wheelrunner.best', best); } catch (e) {}
+  persist(); try { localStorage.removeItem('wheelrunner.backup'); } catch (e) {}
+  refreshButtons(); beep(660, .12, 'triangle', .06); setTimeout(() => beep(990, .2, 'triangle', .06), 110);
+  $result.textContent = 'Progress restored: 💎 ' + save.gems + ' and all your gear and heroes are back.'; renderRestore(); renderPicker();
+});
+
 
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
