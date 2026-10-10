@@ -79,20 +79,44 @@
   #hname{display:flex;flex-direction:column;min-width:13cqw}
   #hname b{font-size:3.6cqh}
   #hname small{font-size:2.3cqh;opacity:.75;line-height:1.2}
+  /* Controls: the action buttons live in one wrapping row beside FIRE so they never run off a small screen; sizes have a thumb-friendly minimum. */
+  #actions{position:absolute;right:calc(3cqw + max(15cqh,60px) + 1.6cqh);bottom:6cqh;display:flex;flex-direction:row-reverse;flex-wrap:wrap-reverse;align-items:flex-end;gap:1.4cqh;max-width:62cqw;z-index:3}
+  #actions button{position:static!important;right:auto!important;bottom:auto!important;width:max(10cqh,46px)!important;height:max(10cqh,46px)!important;flex:none;line-height:1.05;padding:0}
+  #fire{width:max(15cqh,60px)!important;height:max(15cqh,60px)!important}
+  #mvl,#mvr{width:max(14cqh,56px)!important;height:max(14cqh,56px)!important}
+  #mvr{left:calc(3cqw + max(14cqh,56px) + 2cqh)!important}
+  #audiobar{bottom:.4cqh}
+  #audiobar button{width:max(5cqh,24px)!important;height:max(5cqh,24px)!important}
+  @media (pointer:coarse){#audiobar{left:50%;transform:translateX(-50%)} #audiobar button{width:max(5cqh,32px)!important;height:max(5cqh,32px)!important}}
+  #rotate{display:none;position:fixed;top:0;left:0;right:0;z-index:70;background:#ffd23f;color:#2b1700;font:700 14px system-ui;padding:8px 12px;align-items:center;justify-content:space-between;gap:10px}
+  #rotate.off{display:none!important}
+  @media (orientation:portrait) and (pointer:coarse){
+    #rotate{display:flex}
+    #actions{right:calc(2cqw + 50px + 6px);gap:5px}
+    #actions button{width:38px!important;height:38px!important;font-size:9px!important}
+    #fire{width:50px!important;height:50px!important}
+    #mvl,#mvr{width:48px!important;height:48px!important}
+    #mvr{left:calc(3cqw + 52px)!important}
+    #audiobar{top:1cqh;bottom:auto}
+    #audiobar button{width:26px!important;height:26px!important}
+  }
 </style>
 </head>
 <body>
+<div id="rotate"><span>📱 Turn your phone sideways for a bigger view and bigger buttons.</span><b id="rotateX">✕</b></div>
 <div id="wrap">
   <div id="stage">
     <canvas id="game" width="900" height="420"></canvas>
     <button id="fire" aria-label="Fire">FIRE</button>
     <div id="audiobar"><button id="musicBtn" aria-label="Toggle music">🎵</button><button id="sfxBtn" aria-label="Toggle sound effects">🔊</button></div>
     <button id="mvl" aria-label="Move left">◀</button><button id="mvr" aria-label="Move right">▶</button>
-    <button id="dash" aria-label="Dash">DASH</button>
-    <button id="tank" aria-label="Battle tank">TANK</button>
-    <button id="mech" aria-label="Battle mech">MECH</button>
-    <button id="mw" aria-label="Switch mech weapon">🔫 GUN</button>
-    <button id="swap" aria-label="Switch weapon">SWAP</button>
+    <div id="actions">
+      <button id="swap" aria-label="Switch weapon">SWAP</button>
+      <button id="dash" aria-label="Dash">DASH</button>
+      <button id="tank" aria-label="Battle tank">TANK</button>
+      <button id="mech" aria-label="Battle mech">MECH</button>
+      <button id="mw" aria-label="Switch mech weapon">🔫 GUN</button>
+    </div>
     <div id="overlay">
       <canvas id="wheel" width="560" height="560"></canvas>
       <div id="panel">
@@ -768,6 +792,7 @@ $restore.addEventListener('click', () => {
 });
 
 
+document.getElementById('rotateX').addEventListener('click', () => document.getElementById('rotate').classList.add('off'));
 // Audio controls: first gesture unlocks WebAudio (browsers block sound until then); every menu button gets a click.
 const $musicBtn = document.getElementById('musicBtn'), $sfxBtn = document.getElementById('sfxBtn');
 function renderAudioBtns() {
