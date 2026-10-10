@@ -355,7 +355,7 @@ const MODS = [
 let combo = 0, comboT = 0, bestCombo = 0, gemC = 0, freezeT = 0, hitThisLevel = false, floaters = [];
 const cm = () => 1 + Math.min(3, Math.floor(combo / 5) * .5);
 function evt(k, n) { if (typeof missionEvt === 'function') missionEvt(k, n); }
-function floater(txt, x, y, col = '#fff') { floaters.push({txt, x, y, t:55, col}); }
+function floater(txt, x, y, col = '#fff') { floaters.push({txt, x, y:y - floaters.filter(f => f.t > 25).length * 18, t:55, col}); }
 function buzz(ms) { if (audioPrefs.sfx && navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
 function bump(n) {
   const before = combo; combo += n; comboT = 180; if (combo > bestCombo) bestCombo = combo;
@@ -363,6 +363,21 @@ function bump(n) {
   evt('combo', combo);
 }
 function tookHit() { combo = 0; comboT = 0; gemC = 0; hitThisLevel = true; freezeT = 4; buzz(55); }
+// In-run pickups: floating orbs with a temporary power.
+const PICKUPS = {shield:{icon:'🛡️', col:'#46d3ff', name:'SHIELD'}, slow:{icon:'🐢', col:'#9d7bff', name:'SLOW-MO'}, x2:{icon:'2×', col:'#ffd23f', name:'DOUBLE GEMS'},
+  mag:{icon:'🧲', col:'#ff6b6b', name:'MAGNET'}, boost:{icon:'🚀', col:'#ff9d2e', name:'ROCKET BOOST: hold jump!'}};
+let slowT = 0, x2T = 0, magT = 0, boostT = 0, pkLeft = 480;
+function spawnPickup(type) {
+  const keys_ = Object.keys(PICKUPS), t = type || keys_[Math.floor(rng() * keys_.length)];
+  gems.push({x:W + 40, y:GROUND - 70 - rng() * 35, t:0, v:0, pk:t});
+}
+function activatePickup(t) {
+  const p = player, d = PICKUPS[t];
+  if (t === 'shield') p.bubble = true; else if (t === 'slow') slowT = 360; else if (t === 'x2') x2T = 600; else if (t === 'mag') magT = 600; else if (t === 'boost') boostT = 420;
+  floater(d.name, p.x, p.y - 96, d.col); dust(p.x, p.y - 40, 12, d.col); buzz(20);
+  beep(660, .08, 'triangle', .06); setTimeout(() => beep(990, .12, 'triangle', .06), 80); evt('pickups', 1);
+}
+function popBubble() { const p = player; p.bubble = false; p.inv = 60; shake = 8; flash = .25; dust(p.x, p.y - 40, 16, 'rgba(110,224,255,.95)'); beep(300, .2, 'sawtooth', .06, -150); floater('SHIELD BROKE', p.x, p.y - 96, '#46d3ff'); }
 let mod = null, gemMult = 1, dark = false, forceModId;   // forceModId is a test hook
 const applyMod = (base, m) => { const l = Object.assign({}, base); if (m && m.id === 'lowg') { l.g *= .6; l.jv *= .8; } if (m && m.id === 'fast') { l.speed *= 1.25; l.mult *= 2; } return l; };
 let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60, minis = [], chip = 0;
@@ -371,9 +386,9 @@ const keys = {down:false, jump:false, left:false, right:false};
 let touchDown = false, touchJump = false, touchL = false, touchR = false, touchFire = false;
 
 function resetGame() {
-  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0, rfuel:100, airT:0, boost:false};
+  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0, rfuel:100, airT:0, boost:false, bubble:false};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
-  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = MAX_RETRIES; cpTime = 0; cpPassed = 0; mod = null; gemMult = 1; dark = false; combo = 0; comboT = 0; bestCombo = 0; gemC = 0; hitThisLevel = false; floaters = []; shake = 0; flash = 0;
+  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = MAX_RETRIES; cpTime = 0; cpPassed = 0; mod = null; gemMult = 1; dark = false; slowT = 0; x2T = 0; magT = 0; boostT = 0; pkLeft = 480; combo = 0; comboT = 0; bestCombo = 0; gemC = 0; hitThisLevel = false; floaters = []; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
 resetGame();
@@ -888,6 +903,7 @@ function damagePlayer() {
   const p = player;
   if (p.inv > 0 || p.dead || (boss && boss.dead)) return;
   if (p.mechT > 0) { mechHit(); return; }
+  if (p.bubble) { popBubble(); return; }
   tookHit();
   if (armor > 0) { armor--; p.inv = 70; shake = 9; flash = .5; dust(p.x, p.y - 30, 14, 'rgba(255,210,90,.95)'); beep(200, .25, 'sawtooth', .07, -120); }
   else die();
@@ -1298,6 +1314,7 @@ function die() {
 function update(dt) {
   levelTime += dt;
   speed = level.speed + Math.min(2.5, levelTime * .0017) + Math.min(2, levelsDone * .2);
+  if (slowT > 0) { speed *= .6; slowT -= dt; } if (x2T > 0) x2T -= dt; if (magT > 0) magT -= dt; if (boostT > 0) boostT -= dt;
   dist += speed * dt;
   scoreAcc += speed * dt * .1 * level.mult * cm(); score = Math.floor(scoreAcc);
 
@@ -1328,8 +1345,8 @@ function update(dt) {
   } else if (!p.onGround) {
     p.vy += level.g * CH().grav * (wantsSlide() ? 2.4 : 1) * (p.mechT > 0 ? 1.15 : 1) * dt;
     p.airT += dt; p.boost = false;
-    if (has('rocketshoes') && p.mechT <= 0 && (keys.jump || touchJump) && p.airT > 10 && p.rfuel > 0) {      // rocket shoes: hold jump in the air to thrust upward
-      p.rfuel -= dt; p.boost = true;
+    if ((has('rocketshoes') || boostT > 0) && p.mechT <= 0 && (keys.jump || touchJump) && p.airT > 10 && (p.rfuel > 0 || boostT > 0)) {      // rocket shoes / boost pickup: hold jump in the air to thrust upward
+      if (boostT <= 0) p.rfuel -= dt; p.boost = true;
       p.vy -= (level.g * CH().grav + 1.25) * dt; p.vy = Math.max(p.vy, -5.8);
       if (p.y <= RFLY_TOP && p.vy < 0) p.vy = 0;
       p.bt = (p.bt || 0) + dt; if (p.bt > 5) { p.bt = 0; beep(170 + Math.random() * 50, .06, 'sawtooth', .035, -60); }
@@ -1350,13 +1367,15 @@ function update(dt) {
   gemLeft -= speed * dt;
   if (gemLeft <= 0 && boss) gemLeft = 200;
   if (gemLeft <= 0) { if (obstacles.some(o => o.x > W - 160)) gemLeft = 90; else { gemRow(); gemLeft = speed * (70 + Math.random() * 90); } }
+  pkLeft -= dt; if (pkLeft <= 0 && !boss) { if (obstacles.some(o => o.x > W - 160)) pkLeft = 60; else { spawnPickup(); pkLeft = 700 + rng() * 500; } }
   const gph = p.sliding && p.onGround ? 30 : 62;
   for (const g of gems) {
     g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
     keepGemClear(g);
-    if (has('magnet') || CH().magnet) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
-    if (!g.got && Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
-      g.got = true; const gain = Math.floor(g.v * CH().gem * gemMult + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist(); evt('gems', gain); gemC++; if (combo > 0) comboT = Math.max(comboT, 120); if (gemC >= 3) { gemC = 0; bump(1); }
+    if (has('magnet') || CH().magnet || magT > 0) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
+    if (g.pk && !g.got && Math.abs(g.x - p.x) < 34 && g.y > p.y - gph - 14 && g.y < p.y + 10) { g.got = true; activatePickup(g.pk); continue; }
+    if (!g.pk && !g.got && Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
+      g.got = true; const gain = Math.floor(g.v * CH().gem * gemMult * (x2T > 0 ? 2 : 1) + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist(); evt('gems', gain); gemC++; if (combo > 0) comboT = Math.max(comboT, 120); if (gemC >= 3) { gemC = 0; bump(1); }
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
   }
@@ -1458,6 +1477,7 @@ function update(dt) {
       continue;
     }
     if (p.mechT > 0) { o.dead = true; dust(o.x + o.w / 2, o.y - o.h / 2, 12, 'rgba(255,200,120,.95)'); mechHit(); continue; }
+    if (p.bubble) { popBubble(); o.dead = true; continue; }
     tookHit();
     if (armor > 0) {                                  // armor soaks the crash and smashes the obstacle
       armor--; p.inv = 70; o.dead = true; shake = 9; flash = .5;
@@ -2114,6 +2134,14 @@ function render() {
   if (boss) { drawBoss(boss); drawMinis(); drawEps(); }
   drawSupers();
   for (const g of gems) {
+    if (g.pk) {
+      const d = PICKUPS[g.pk], by = g.y + Math.sin(g.t * .1) * 4, pr = 17 + Math.sin(g.t * .2) * 2;
+      ctx.fillStyle = d.col + '55'; ctx.beginPath(); ctx.arc(g.x, by, pr + 9, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(10,14,30,.85)'; ctx.beginPath(); ctx.arc(g.x, by, pr, 0, 7); ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = d.col; ctx.stroke();
+      ctx.font = '800 ' + (d.icon.length > 2 ? 18 : 15) + 'px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(d.icon, g.x, by + 6); ctx.textAlign = 'left';
+      continue;
+    }
     const by = g.y + Math.sin(g.t * .12) * 3, r = g.v > 1 ? 14 : 10, c = g.v > 1 ? ['#c26bff', '#e6bcff', '#8a3fd1'] : ['#38e1ff', '#c9f7ff', '#1796c7'];
     ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(g.x, by - r); ctx.lineTo(g.x + r, by - r * .2); ctx.lineTo(g.x, by + r); ctx.lineTo(g.x - r, by - r * .2); ctx.fill();
     ctx.fillStyle = c[1]; ctx.beginPath(); ctx.moveTo(g.x, by - r); ctx.lineTo(g.x - r, by - r * .2); ctx.lineTo(g.x, by - r * .2); ctx.fill();
@@ -2126,6 +2154,7 @@ function render() {
     ctx.fillStyle = '#e8ffff'; ctx.beginPath(); ctx.roundRect(b.x, b.y - 4, 16, 8, 4); ctx.fill();
   }
   player.tankT > 0 ? drawTank(player) : player.mechT > 0 ? drawMech(player) : drawPlayer(player);
+  if (player.bubble) { const bp = 1 + Math.sin(clock * .15) * .04; ctx.fillStyle = 'rgba(110,224,255,.18)'; ctx.strokeStyle = 'rgba(160,240,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(player.x, player.y - 34, 34 * bp, 48 * bp, 0, 0, 7); ctx.fill(); ctx.stroke(); }
   for (const f of floaters) { ctx.globalAlpha = Math.min(1, f.t / 20); ctx.font = '800 17px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.strokeText(f.txt, f.x, f.y); ctx.fillStyle = f.col; ctx.fillText(f.txt, f.x, f.y); }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
   ctx.restore();
@@ -2212,6 +2241,8 @@ function render() {
     ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, fy, 150, 10); ctx.fillStyle = player.flyT > 0 ? '#ffb347' : ready ? '#6dffb0' : '#7a8aa8'; ctx.fillRect(18, fy, 150 * f, 10);
     hudTxt(player.flyT > 0 ? '🚀 ' + Math.ceil(player.flyT / 60) + 's' : ready ? '🚀 PINCH / G TO FLY' : '🚀 ' + Math.ceil(player.flyCD / 60) + 's', 174, fy - 3, 13);
   }
+  { const fx = []; if (player.bubble) fx.push('🛡️'); if (slowT > 0) fx.push('🐢 ' + Math.ceil(slowT / 60)); if (x2T > 0) fx.push('2× ' + Math.ceil(x2T / 60)); if (magT > 0) fx.push('🧲 ' + Math.ceil(magT / 60)); if (boostT > 0) fx.push('🚀 ' + Math.ceil(boostT / 60));
+    if (fx.length && state === 'play') hudTxt(fx.join('   '), 410, 150, 16); }
   if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 410, 82, 18); ctx.globalAlpha = 1; }
   if (boss && !boss.dead) {
     for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 176, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
@@ -2243,7 +2274,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
