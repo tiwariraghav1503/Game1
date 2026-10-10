@@ -60,6 +60,9 @@
   .card small:empty{display:none}
   .card button{font:inherit;font-weight:800;font-size:calc(var(--u) * 3.3);padding:calc(var(--u) * 1) .6vw;border:0;border-radius:calc(var(--u) * 1.4);background:#6ef0ff;color:#032031;cursor:pointer;white-space:nowrap;margin-top:auto;flex:none;overflow:hidden;text-overflow:ellipsis}
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
+  .card .bar{height:calc(var(--u) * 1.4);background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;flex:none}
+  .card .bar i{display:block;height:100%;background:#6dffb0}
+  .mnote{font-size:calc(var(--u) * 2.4);opacity:.6;margin:calc(var(--u) * 1) 0 0}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:2.3cqh;line-height:1.25;opacity:.6}
   #resetBtn{font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid rgba(255,120,120,.7);border-radius:99px;background:transparent;color:#ff9a9a;cursor:pointer;align-self:flex-start}
@@ -101,7 +104,7 @@
     </div>
   </div>
   <div id="shop" class="hidden">
-    <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="heroes">HEROES</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
+    <div id="shophead"><h2>SHOP</h2><button class="tab on" data-tab="gear">GEAR</button><button class="tab" data-tab="heroes">HEROES</button><button class="tab" data-tab="missions">MISSIONS</button><button class="tab" data-tab="gems">GET GEMS</button><span id="gemcount"></span><button id="shopclose">BACK</button></div>
     <div id="shopmsg"></div>
     <div id="items"></div>
   </div>
@@ -303,7 +306,7 @@ const HEROES = [
   {id:'hunter',    name:'Treasure Hunter', cost:300, desc:'Built-in magnet and 25% more diamonds.', skin:'#d9a272', shirt:'#3b9a6a', pants:'#8a6a3a', shoe:'#4a3320', hair:'#2a1a10', gem:1.25, magnet:true},
 ].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
 let save = {gems:0, owned:{}, hero:'runner'};
-try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner'}; } catch (e) {}
+try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner', missions:Array.isArray(j.missions) ? j.missions : undefined, day:j.day, dailyBest:j.dailyBest}; } catch (e) {}
 if (!HEROES.some(h => h.id === save.hero && (h.cost === 0 || save.owned['hero_' + h.id]))) save.hero = 'runner';
 const CH = () => HEROES.find(h => h.id === save.hero) || HEROES[0];
 const persist = () => { try { localStorage.setItem('wheelrunner.save', JSON.stringify(save)); } catch (e) {} };
@@ -736,7 +739,7 @@ $reset.addEventListener('click', () => {
   disarmReset();
   const hasProgress = save.gems > 0 || Object.keys(save.owned).length > 0 || best > 0;     // never overwrite a backup with an empty save
   if (hasProgress) { try { localStorage.setItem('wheelrunner.backup', JSON.stringify({save, best})); } catch (e) {} }
-  save = {gems:0, owned:{}, hero:'runner'}; persist();
+  save = {gems:0, owned:{}, hero:'runner'}; ensureMissions(); persist();
   best = 0; try { localStorage.removeItem('wheelrunner.best'); } catch (e) {}
   resetGame(); levelIdx = 0; level = LEVELS[0]; weapon = 0; toast = 0; state = 'title';
   refreshButtons(); beep(200, .3, 'sawtooth', .06, -100);
@@ -771,10 +774,51 @@ const unlockAudio = () => { if (ensureAudio()) actx.resume().then(() => musicPla
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#overlay button, #shop button'); if (b && b.id !== 'btn') beep(660, .04, 'triangle', .04); });
 document.addEventListener('visibilitychange', () => { if (!actx) return; document.hidden ? actx.suspend() : actx.resume(); });
 
+// ---------------------------------------------------------------- daily missions
+// Three goals per day (the same for everyone on a given date). Progress counts across runs; finishing one pays gems straight away.
+const MISSION_T = [
+  {k:'kills',    n:[10, 25], r:[50, 110],  t:n => 'Defeat ' + n + ' enemies'},
+  {k:'gems',     n:[40, 120], r:[40, 100], t:n => 'Collect ' + n + ' diamonds'},
+  {k:'levels',   n:[2, 5],  r:[60, 140],   t:n => 'Clear ' + n + ' levels'},
+  {k:'nearmiss', n:[5, 15], r:[50, 110],   t:n => 'Pull off ' + n + ' near misses'},
+  {k:'combo',    n:[10, 25], r:[60, 130],  t:n => 'Reach a ' + n + '-hit combo'},
+  {k:'nohit',    n:[1, 2],  r:[80, 160],   t:n => 'Clear ' + n + ' level' + (n > 1 ? 's' : '') + ' without being hit'},
+  {k:'pickups',  n:[3, 8],  r:[50, 100],   t:n => 'Grab ' + n + ' power-up orbs'},
+];
+const dayKey = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const strHash = str => { let h = 2166136261; for (const c of str) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+const seededRand = seed => { let a = seed | 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+function ensureMissions() {
+  const day = dayKey();
+  if (save.day === day && Array.isArray(save.missions) && save.missions.length) return;
+  const r = seededRand(strHash('missions' + day)), pool = MISSION_T.slice(); save.missions = [];
+  for (let i = 0; i < 3; i++) {
+    const t = pool.splice(Math.floor(r() * pool.length), 1)[0], step = t.n[1] > 20 ? 5 : 1;
+    save.missions.push({k:t.k, n:Math.max(1, Math.round((t.n[0] + r() * (t.n[1] - t.n[0])) / step) * step), p:0, r:Math.round((t.r[0] + r() * (t.r[1] - t.r[0])) / 5) * 5, d:false});
+  }
+  save.day = day; persist();
+}
+const missionText = m => MISSION_T.find(t => t.k === m.k).t(m.n);
+const missionsOpen = () => (save.missions || []).filter(m => !m.d).length;
+function missionEvt(k, n = 1) {
+  ensureMissions(); let changed = false;
+  for (const m of save.missions) {
+    if (m.d || m.k !== k) continue;
+    if (k === 'combo') { if (n <= m.p) continue; m.p = n; } else m.p += n;
+    changed = true;
+    if (m.p >= m.n) {
+      m.p = m.n; m.d = true; save.gems += m.r; runGems += m.r;
+      toast = 170; toastMsg = 'Mission complete +' + m.r + ' gems'; jingle([72, 76, 79, 84], .08, 'square', .06); buzz(30);
+    }
+  }
+  if (changed && k !== 'gems') persist();
+}
+
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
 const ownedHeroes = () => HEROES.filter(h => h.cost === 0 || has('hero_' + h.id));
 function renderPicker() {
+  ensureMissions(); const mo = missionsOpen(); $shopBtn.innerHTML = 'SHOP 💎' + (mo ? ' <small style="font-size:.6em">🎯' + mo + '</small>' : '');
   const can = state === 'title' || state === 'over';          // heroes are locked in for the rest of a run
   $hp.style.display = can ? 'flex' : 'none';
   if (!can) return;
@@ -817,6 +861,13 @@ function renderShop() {
       drawPlayer({x:36, y:100, vy:0, onGround:true, sliding:false, phase:.7, dead:false, face:1, portrait:true, ch:h, atk:null, inv:0, dashT:0, flash:0});
     });
     ctx = main;
+    return;
+  }
+  if (shopTab === 'missions') {
+    ensureMissions();
+    $items.innerHTML = '<div class="grid">' + save.missions.map(m => '<div class="card' + (m.d ? ' owned' : '') + '" title="' + esc(missionText(m)) + '"><span class="ic">🎯</span><span class="tp">Daily mission</span><b>' + esc(missionText(m)) +
+      '</b><div class="bar"><i style="width:' + Math.round(100 * m.p / m.n) + '%"></i></div><small>' + m.p + ' / ' + m.n + ' · reward 💎 ' + m.r + '</small><button disabled>' + (m.d ? 'DONE ✓' : 'IN PROGRESS') + '</button></div>').join('') +
+      '</div><p class="mnote">New missions every day. Progress counts across all your runs.</p>';
     return;
   }
   if (shopTab === 'gems') {
@@ -1522,9 +1573,9 @@ function update(dt) {
     beep(700, .12, 'triangle', .06); setTimeout(() => beep(1050, .2, 'triangle', .06), 120); dust(player.x, player.y - 30, 10, 'rgba(120,255,160,.9)');
   }
   if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss && (levelsDone + 1) % 10 === 0) {
-    levelsDone++; const n = levelsDone / 10 - 1; startBoss(n % BOSSES.length, Math.floor(n / BOSSES.length));
+    levelsDone++; evt('levels', 1); if (!hitThisLevel) evt('nohit', 1); const n = levelsDone / 10 - 1; startBoss(n % BOSSES.length, Math.floor(n / BOSSES.length));
   } else if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss) {
-    levelsDone++; retries = Math.min(MAX_RETRIES, retries + 1); state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
+    levelsDone++; evt('levels', 1); if (!hitThisLevel) evt('nohit', 1); retries = Math.min(MAX_RETRIES, retries + 1); state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
     const bonus = 15 + 5 * levelsDone; save.gems += bonus; runGems += bonus; persist();
     showOverlay('LEVEL CLEAR!', 'Level bonus +' + bonus + ' 💎. Spin the wheel to pick your next level.', 'SPIN');
   }
@@ -2305,7 +2356,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get missions(){return save.missions}, get missionDay(){return save.day}, mEvt:(k, n) => missionEvt(k, n), setDay:d => { save.day = d; }, ensureMissions, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
