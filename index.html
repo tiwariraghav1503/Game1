@@ -25,6 +25,9 @@
   #tank{display:none;position:absolute;right:45cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#7bd06a;color:#0c2a06;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #3f8a2f;opacity:.9;touch-action:none}
   #dash{display:none;position:absolute;right:33cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#c58bff;color:#220a3a;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #7a3fc4;opacity:.85;touch-action:none}
   #mvl,#mvr{display:none;position:absolute;bottom:6cqh;width:14cqh;height:14cqh;border-radius:50%;border:0;background:rgba(255,255,255,.22);color:#fff;font:800 6cqh system-ui;touch-action:none}
+  #audiobar{position:absolute;left:1.2cqw;bottom:.8cqh;display:flex;gap:.8cqw;z-index:5}
+  #audiobar button{width:5cqh;height:5cqh;border-radius:50%;border:0;background:rgba(0,0,0,.45);color:#fff;font-size:2.8cqh;line-height:1;padding:0;cursor:pointer;touch-action:manipulation}
+  #audiobar button.off{opacity:.4}
   #mvl{left:3cqw}
   #mvr{left:calc(3cqw + 17cqh)}
   #fire:active{transform:translateY(.6cqh)}
@@ -74,6 +77,7 @@
   <div id="stage">
     <canvas id="game" width="900" height="420"></canvas>
     <button id="fire" aria-label="Fire">FIRE</button>
+    <div id="audiobar"><button id="musicBtn" aria-label="Toggle music">🎵</button><button id="sfxBtn" aria-label="Toggle sound effects">🔊</button></div>
     <button id="mvl" aria-label="Move left">◀</button><button id="mvr" aria-label="Move right">▶</button>
     <button id="dash" aria-label="Dash">DASH</button>
     <button id="tank" aria-label="Battle tank">TANK</button>
@@ -130,17 +134,131 @@ const LEVEL_FRAMES = 60 * 60;   // ~60 s per wheel spin
 const CHECKPOINTS = [.25, .5, .75], MAX_RETRIES = 3;   // flags on the progress bar; a crash rewinds to the last one
 
 // ---------------------------------------------------------------- audio
-let actx = null;
-function beep(f, d = .08, type = 'square', vol = .05, slide = 0) {
+// Everything is synthesized live with WebAudio: no audio files. sfxBus carries the effects, musBus the music; both can be muted.
+let actx = null, sfxBus = null, musBus = null, echoSend = null, noiseBuf = null, analyser = null;
+let audioPrefs = {music:true, sfx:true};
+const MUS_VOL = 1.3;   // music bus level relative to effects
+try { const a = JSON.parse(localStorage.getItem('wheelrunner.audio') || 'null'); if (a) audioPrefs = {music:a.music !== false, sfx:a.sfx !== false}; } catch (e) {}
+const saveAudioPrefs = () => { try { localStorage.setItem('wheelrunner.audio', JSON.stringify(audioPrefs)); } catch (e) {} };
+function ensureAudio() {
   try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = actx.createOscillator(), g = actx.createGain();
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = actx.createGain(); master.gain.value = .9; master.connect(actx.destination);
+      analyser = actx.createAnalyser(); analyser.fftSize = 512; master.connect(analyser);
+      sfxBus = actx.createGain(); sfxBus.gain.value = audioPrefs.sfx ? 1 : 0; sfxBus.connect(master);
+      musBus = actx.createGain(); musBus.gain.value = audioPrefs.music ? MUS_VOL : 0; musBus.connect(master);
+      const dly = actx.createDelay(1), fb = actx.createGain(), wet = actx.createGain();
+      dly.delayTime.value = .34; fb.gain.value = .38; wet.gain.value = .5;
+      echoSend = actx.createGain(); echoSend.gain.value = 1; echoSend.connect(dly); dly.connect(fb); fb.connect(dly); dly.connect(wet); wet.connect(musBus);
+      noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return true;
+  } catch (e) { return false; }
+}
+function beep(f, d = .08, type = 'square', vol = .05, slide = 0) {
+  if (!audioPrefs.sfx || !ensureAudio()) return;
+  try {
+    const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
     o.type = type; o.frequency.value = f;
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), actx.currentTime + d);
-    g.gain.value = vol; g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + d);
-    o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + d);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t + d);
+    g.gain.value = vol; g.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(g).connect(sfxBus); o.start(); o.stop(t + d);
   } catch (e) {}
 }
+// ---- music: a tiny step sequencer. Each level has its own tempo, scale, instruments, bass line, drums and melody.
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const SC = {major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10], dorian:[0,2,3,5,7,9,10], lydian:[0,2,4,6,7,9,11], phryg:[0,1,3,5,7,8,10],
+  phrygDom:[0,1,4,5,7,8,10], majPent:[0,2,4,7,9], minPent:[0,3,5,7,10]};
+const THEMES = {
+  Title:    {bpm:100, root:60, scale:'major',    lead:'triangle', bass:'sine',     bp:'arp',    drums:0, prog:[0,5,3,4], seed:2},
+  Meadow:   {bpm:116, root:60, scale:'majPent',  lead:'triangle', bass:'sine',     bp:'root8',  drums:1, prog:[0,3,4,3], seed:11},
+  Desert:   {bpm:104, root:62, scale:'phrygDom', lead:'square',   bass:'triangle', bp:'half',   drums:1, prog:[0,0,3,0], seed:23},
+  Snow:     {bpm:88,  root:69, scale:'major',    lead:'sine',     bass:'sine',     bp:'half',   drums:0, prog:[0,5,3,4], seed:5,  echo:1},
+  Moon:     {bpm:80,  root:64, scale:'minPent',  lead:'sine',     bass:'sine',     bp:'half',   drums:0, prog:[0,3,2,4], seed:41, echo:1},
+  Lava:     {bpm:136, root:50, scale:'minor',    lead:'sawtooth', bass:'sawtooth', bp:'pulse8', drums:2, prog:[0,5,3,4], seed:7},
+  City:     {bpm:122, root:57, scale:'dorian',   lead:'sawtooth', bass:'square',   bp:'arp',    drums:2, prog:[0,3,5,4], seed:19},
+  Storm:    {bpm:130, root:48, scale:'minor',    lead:'square',   bass:'sawtooth', bp:'pulse8', drums:2, prog:[0,6,5,4], seed:29, thunder:1},
+  Jungle:   {bpm:124, root:55, scale:'majPent',  lead:'triangle', bass:'sine',     bp:'root8',  drums:4, prog:[0,3,0,4], seed:13},
+  Graveyard:{bpm:72,  root:54, scale:'phryg',    lead:'sine',     bass:'triangle', bp:'half',   drums:0, prog:[0,1,0,4], seed:3,  echo:1},
+  Candy:    {bpm:138, root:65, scale:'major',    lead:'square',   bass:'triangle', bp:'root8',  drums:1, prog:[0,4,5,3], seed:17},
+  Reef:     {bpm:96,  root:62, scale:'lydian',   lead:'sine',     bass:'sine',     bp:'arp',    drums:0, prog:[0,4,1,3], seed:31, echo:1},
+  Turbo:    {bpm:158, root:52, scale:'minor',    lead:'sawtooth', bass:'sawtooth', bp:'pulse16',drums:3, prog:[0,0,5,4], seed:37},
+  Boss:     {bpm:148, root:48, scale:'phryg',    lead:'sawtooth', bass:'sawtooth', bp:'pulse16',drums:3, prog:[0,1,0,6], seed:43},
+};
+const degSemis = (sc, d) => { const s = SC[sc]; return s[((d % s.length) + s.length) % s.length] + 12 * Math.floor(d / s.length); };
+for (const k in THEMES) {                                   // melody: a seeded random walk over the scale, 16 eighth-notes (2 bars)
+  const T = THEMES[k]; let r = T.seed * 9301 + 49297, d = 7; const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  T.melody = [];
+  for (let i = 0; i < 16; i++) { d = Math.max(4, Math.min(11, d + Math.floor(rnd() * 5) - 2)); T.melody.push(i % 4 === 3 && rnd() < .4 ? -1 : d); }
+}
+const mus = {theme:null, want:'Title', step:0, next:0, timer:0};
+function tone(f, t, dur, type, vol, dest) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + Math.max(.04, dur));
+  o.connect(g).connect(dest || musBus); o.start(t); o.stop(t + dur + .05);
+}
+function noiseHit(t, dur, vol, ftype, freq) {
+  const s = actx.createBufferSource(), fl = actx.createBiquadFilter(), g = actx.createGain();
+  s.buffer = noiseBuf; fl.type = ftype; fl.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(fl).connect(g).connect(musBus); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
+}
+function kick(t, v = .22) { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + .12); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + .18); o.connect(g).connect(musBus); o.start(t); o.stop(t + .2); }
+function playStep(T, s, t) {
+  const sl = 60 / T.bpm / 4, bar = Math.floor(s / 16) % 4, sp = s % 16, root = T.root - 12 + degSemis(T.scale, T.prog[bar]);
+  const bv = T.bass === 'sawtooth' ? .05 : .09;
+  switch (T.bp) {
+    case 'root8':   if (sp % 2 === 0) tone(mtof(root + (sp % 4 === 2 ? 12 : 0)), t, sl * 1.8, T.bass, bv); break;
+    case 'half':    if (sp === 0 || sp === 8) tone(mtof(root), t, sl * 7.5, T.bass, bv); break;
+    case 'pulse8':  if (sp % 2 === 0) tone(mtof(root), t, sl * 1.4, T.bass, bv); break;
+    case 'pulse16': tone(mtof(root + (sp % 8 === 6 ? 12 : 0)), t, sl * .8, T.bass, bv * .8); break;
+    case 'arp':     if (sp % 2 === 0) tone(mtof(root + 12 + degSemis(T.scale, [0, 2, 4, 2][(sp / 2) % 4])), t, sl * 1.6, T.bass, bv * .8); break;
+  }
+  if (sp % 2 === 0) {                                                         // lead melody on eighth-notes
+    const d = T.melody[(s / 2) % 16];
+    if (d >= 0) {
+      const f = mtof(T.root + 12 + degSemis(T.scale, d + T.prog[bar])), vol = T.lead === 'sawtooth' ? .03 : T.lead === 'sine' ? .06 : .045;
+      tone(f, t, sl * (T.lead === 'sine' ? 3.2 : 1.7), T.lead, vol);
+      if (T.echo) tone(f, t, sl * 3, T.lead, vol * .6, echoSend);
+    }
+  }
+  switch (T.drums) {                                                          // 1 soft, 2 four-on-the-floor, 3 heavy, 4 tribal
+    case 1: if (sp === 0 || sp === 8) kick(t, .14); if (sp % 4 === 2) noiseHit(t, .03, .03, 'highpass', 8000); break;
+    case 2: if (sp % 4 === 0) kick(t); if (sp === 4 || sp === 12) noiseHit(t, .1, .07, 'bandpass', 1900); if (sp % 2 === 1) noiseHit(t, .03, .035, 'highpass', 8000); break;
+    case 3: if (sp % 4 === 0 || sp === 10) kick(t, .26); if (sp === 4 || sp === 12) noiseHit(t, .12, .09, 'bandpass', 1700); noiseHit(t, .025, .03, 'highpass', 9000); break;
+    case 4: if (sp === 0 || sp === 6 || sp === 10) kick(t, .2); if (sp === 3 || sp === 11 || sp === 14) tone(mtof(T.root - 5), t, .12, 'sine', .1); break;
+  }
+  if (T.thunder && s % 64 === 0 && Math.random() < .55) { noiseHit(t, 1.1, .16, 'lowpass', 260); }
+}
+function musicTick() {
+  if (!actx || !mus.theme || !audioPrefs.music) return;
+  const T = THEMES[mus.theme], sl = 60 / T.bpm / 4;
+  while (mus.next < actx.currentTime + .25) { playStep(T, mus.step, mus.next); mus.next += sl; mus.step++; }
+}
+function musicPlay(name) {
+  mus.want = name;
+  if (!audioPrefs.music || !THEMES[name] || !ensureAudio() || actx.state !== 'running') return;
+  if (mus.theme === name) return;
+  const old = mus.theme; mus.theme = name;
+  const t = actx.currentTime;
+  if (old) { musBus.gain.cancelScheduledValues(t); musBus.gain.setTargetAtTime(0, t, .04); }
+  mus.step = 0; mus.next = t + (old ? .22 : .08);
+  musBus.gain.setTargetAtTime(MUS_VOL, t + .2, .06);
+  if (!mus.timer) mus.timer = setInterval(musicTick, 40);
+}
+function musicStop() { mus.theme = null; if (actx && musBus) musBus.gain.setTargetAtTime(0, actx.currentTime, .05); }
+function setMusic(on) {
+  audioPrefs.music = on; saveAudioPrefs();
+  if (!actx) return;
+  if (on) { musBus.gain.cancelScheduledValues(actx.currentTime); musBus.gain.setValueAtTime(MUS_VOL, actx.currentTime); const w = mus.want; mus.theme = null; musicPlay(w); }
+  else { musBus.gain.cancelScheduledValues(actx.currentTime); musBus.gain.setValueAtTime(0, actx.currentTime); mus.theme = null; }
+}
+function setSfx(on) { audioPrefs.sfx = on; saveAudioPrefs(); if (actx) sfxBus.gain.setValueAtTime(on ? 1 : 0, actx.currentTime); }
+function jingle(notes, step = .11, type = 'square', vol = .06) { notes.forEach((m, i) => setTimeout(() => beep(mtof(m), step * 1.8, type, vol), i * step * 1000)); }
 
 // ---------------------------------------------------------------- state
 let state = 'title';       // title | spinning | play | wheel | over
@@ -304,12 +422,14 @@ function startLevel() {
   overlay.classList.add('hidden');
   obstacles = []; bullets = []; ammo = maxAmmo(); levelTime = 0; cpTime = 0; cpPassed = 0; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
   state = 'play';
+  musicPlay(level.name); jingle([67, 72, 76], .07, 'square', .05);
 }
 
 function showOverlay(title, text, btn) {
   $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false;
   $result.textContent = ''; wheelWin = -1;
   overlay.classList.remove('hidden');
+  musicPlay('Title');
   renderPicker(); disarmReset(); renderRestore();
 }
 
@@ -443,6 +563,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyQ') nextWeapon();
   else if (e.code === 'KeyG') startFly();
   else if (e.code === 'KeyT') startTank();
+  else if (e.code === 'KeyM') setMusic(!audioPrefs.music), renderAudioBtns();
+  else if (e.code === 'KeyN') setSfx(!audioPrefs.sfx), renderAudioBtns();
   else if (/^Digit[0-9]$/.test(e.code)) setWeapon(e.code === 'Digit0' ? 9 : +e.code.slice(5) - 1);
   else if (e.code === 'Minus') setWeapon(10);
   else if (e.code === 'Enter') primary();
@@ -506,6 +628,20 @@ $restore.addEventListener('click', () => {
   $result.textContent = 'Progress restored: 💎 ' + save.gems + ' and all your gear and heroes are back.'; renderRestore(); renderPicker();
 });
 
+
+// Audio controls: first gesture unlocks WebAudio (browsers block sound until then); every menu button gets a click.
+const $musicBtn = document.getElementById('musicBtn'), $sfxBtn = document.getElementById('sfxBtn');
+function renderAudioBtns() {
+  $musicBtn.textContent = audioPrefs.music ? '🎵' : '🔕'; $musicBtn.classList.toggle('off', !audioPrefs.music); $musicBtn.title = 'Music (M)';
+  $sfxBtn.textContent = audioPrefs.sfx ? '🔊' : '🔇'; $sfxBtn.classList.toggle('off', !audioPrefs.sfx); $sfxBtn.title = 'Sound effects (N)';
+}
+$musicBtn.addEventListener('click', () => { setMusic(!audioPrefs.music); renderAudioBtns(); });
+$sfxBtn.addEventListener('click', () => { setSfx(!audioPrefs.sfx); renderAudioBtns(); beep(660, .05, 'triangle', .05); });
+renderAudioBtns();
+const unlockAudio = () => { if (ensureAudio()) actx.resume().then(() => musicPlay(mus.want)).catch(() => {}); };
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, unlockAudio, {passive:true}));
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#overlay button, #shop button'); if (b && b.id !== 'btn') beep(660, .04, 'triangle', .04); });
+document.addEventListener('visibilitychange', () => { if (!actx) return; document.hidden ? actx.suspend() : actx.resume(); });
 
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
@@ -647,7 +783,7 @@ function startBoss(i, tier) {
   obstacles = []; eps = []; bullets = []; gems = []; minis = []; chip = 0;
   const hp = Math.round(d.hp * (1 + .6 * tier));
   boss = {d, tier, x:W + 170, y:GROUND, hp, max:hp, mt:220, t:0, flash:0, hitBy:0, dead:false, dieT:0, sp:0, shots:0, beams:0, charges:0, tx:0, x0:0};
-  go(boss, 'enter', 1); bossBanner = 190; setBossUI(); beep(110, .7, 'sawtooth', .08, -40);
+  go(boss, 'enter', 1); bossBanner = 190; setBossUI(); beep(110, .7, 'sawtooth', .08, -40); musicPlay('Boss');
 }
 function bossBox(b) { return [b.x - b.d.w / 2 + 8, b.y - b.d.h + 6, b.x + b.d.w / 2 - 8, b.y]; }
 function damageBoss(n) {
@@ -656,6 +792,7 @@ function damageBoss(n) {
   if (b.hp <= 0) { b.dead = true; b.dieT = 0; eps = []; for (const m of minis) dust(m.x, m.y - m.h / 2, 8, 'rgba(255,200,100,.9)'); minis = []; scoreAcc += 500; beep(90, .8, 'sawtooth', .09, -40); }
 }
 function finishBoss() {
+  jingle([60, 64, 67, 72, 76, 79], .1, 'square', .06);
   let reward = 30 + 15 * boss.tier, drop = '';
   const w = WEAPONS.find(x => x.id === boss.d.drop);
   if (!has(w.id)) { save.owned[w.id] = 1; weapon = WEAPONS.indexOf(w); toast = 120; toastMsg = w.name; drop = w.icon + ' ' + w.name.toUpperCase() + ' unlocked! Perk: ' + w.perk + '. '; refreshButtons(); }
@@ -1018,7 +1155,7 @@ function respawn() {
 function die() {
   if (player.dead || state !== 'play') return;
   if (retries > 0) { respawn(); return; }
-  player.dead = true; state = 'over'; shake = 18; flash = 1;
+  player.dead = true; state = 'over'; shake = 18; flash = 1; musicStop(); jingle([64, 62, 59, 55, 52], .16, 'sawtooth', .05);
   beep(220, .5, 'sawtooth', .08, -180);
   dust(player.x, player.y - 30, 24, 'rgba(255,200,120,.9)');
   if (score > best) { best = score; try { localStorage.setItem('wheelrunner.best', best); } catch (e) {} }
@@ -1040,7 +1177,7 @@ function update(dt) {
     p.x = Math.max(34, Math.min(W - 34, p.x + mv * (p.sliding && p.onGround ? 3.2 : 5.6) * CH().walk * dt));
   }
   p.phase += (boss ? Math.abs(mv) * 6 : speed) * dt * .045;
-  if (wantsSlide() && p.onGround) p.sliding = true; else if (!wantsSlide()) p.sliding = false;
+  if (wantsSlide() && p.onGround) { if (!p.sliding) beep(220, .12, 'sawtooth', .03, -140); p.sliding = true; } else if (!wantsSlide()) p.sliding = false;
   if (p.flyCD > 0) p.flyCD -= dt;
   if (p.flyT > 0) {                                     // jetpack: hold jump to rise, slide/down to sink, otherwise hover
     p.flyT -= dt; p.sliding = false;
@@ -1056,7 +1193,7 @@ function update(dt) {
     p.vy += level.g * CH().grav * (wantsSlide() ? 2.4 : 1) * dt;
     if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
     p.y += p.vy * dt;
-    if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; dust(p.x, GROUND, 5); }
+    if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; dust(p.x, GROUND, 5); beep(110, .07, 'sine', .06, -50); }
   } else if ((!boss || mv) && Math.random() < .25 * dt) dust(p.x - 10 * p.face, GROUND, 1, level.snow ? '#fff' : 'rgba(120,100,80,.5)');
 
   if (!boss) { spawnLeft -= speed * dt; if (spawnLeft <= 0) spawn(); }
@@ -1867,7 +2004,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
