@@ -52,6 +52,8 @@
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:3.2cqh;opacity:.6}
+  #resetBtn{font:inherit;font-weight:700;font-size:2.6cqh;padding:.8cqh 2cqh;border:.3cqh solid rgba(255,120,120,.7);border-radius:99px;background:transparent;color:#ff9a9a;cursor:pointer;align-self:flex-start}
+  #resetBtn.armed{background:#d93a3a;color:#fff;border-color:#d93a3a}
   #heropick{display:flex;align-items:center;gap:1.4cqw;background:rgba(255,255,255,.1);border-radius:2cqh;padding:1cqh 1.6cqw}
   #heropick .arr{font:inherit;font-weight:800;font-size:4.4cqh;width:6cqh;height:6cqh;border:0;border-radius:50%;background:#ffd23f;color:#2b1700;cursor:pointer}
   #heropick .arr:disabled{background:#303652;color:#8a93b5;cursor:default}
@@ -77,6 +79,7 @@
         <p id="result"></p>
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
+        <button id="resetBtn">RESET TO LEVEL 1</button>
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
@@ -297,7 +300,7 @@ function showOverlay(title, text, btn) {
   $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false;
   $result.textContent = ''; wheelWin = -1;
   overlay.classList.remove('hidden');
-  renderPicker();
+  renderPicker(); disarmReset();
 }
 
 // ---------------------------------------------------------------- input
@@ -439,6 +442,23 @@ document.getElementById('dash').addEventListener('pointerdown', e => { e.prevent
 refreshButtons();
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
+
+// Full reset: wipes gems, every weapon / armor / hero / perk, the best score and the current run, then returns to level 1.
+// Two taps (the first arms the button) so a stray click can't erase a save.
+const $reset = document.getElementById('resetBtn'); let resetTimer = 0;
+const disarmReset = () => { clearTimeout(resetTimer); $reset.classList.remove('armed'); $reset.textContent = 'RESET TO LEVEL 1'; };
+$reset.addEventListener('click', () => {
+  if (!$shop.classList.contains('hidden')) return;
+  if (!$reset.classList.contains('armed')) {
+    $reset.classList.add('armed'); $reset.textContent = 'TAP AGAIN: ERASES EVERYTHING'; resetTimer = setTimeout(disarmReset, 4000); return;
+  }
+  disarmReset();
+  save = {gems:0, owned:{}, hero:'runner'}; persist();
+  best = 0; try { localStorage.removeItem('wheelrunner.best'); } catch (e) {}
+  resetGame(); levelIdx = 0; level = LEVELS[0]; weapon = 0; toast = 0; state = 'title';
+  refreshButtons(); beep(200, .3, 'sawtooth', .06, -100);
+  showOverlay('WHEEL RUNNER', 'Progress erased. Back to level 1 with nothing but the starter blaster.', 'SPIN THE WHEEL');
+});
 
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
