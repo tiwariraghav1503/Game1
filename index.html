@@ -31,7 +31,7 @@
   #shopBtn{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.6cqh 3cqh;border:0;border-radius:99px;background:linear-gradient(#6ef0ff,#16a6d9);color:#032031;cursor:pointer;box-shadow:0 .8cqh 0 #0b6a8f}
   #shopBtn:active{transform:translateY(.6cqh);box-shadow:0 .2cqh 0 #0b6a8f}
   #shopBtn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
-  #shop{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;gap:calc(var(--u) * 2);padding:calc(var(--u) * 3) 4vw;box-sizing:border-box;background:#070a1a;--u:clamp(5px,1.15vmin,8px);overflow:hidden}
+  #shop{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;gap:calc(var(--u) * 2);padding:calc(var(--u) * 3) 4vw;box-sizing:border-box;background:#070a1a;--u:clamp(5px,1.15vmin,8px);--gap:calc(var(--u) * 2.4);--cardmin:calc(var(--u) * 30);overflow:hidden}
   #shop.hidden{display:none}
   #shophead{display:flex;align-items:center;flex-wrap:wrap;gap:calc(var(--u) * 1.2) 2.4vw;flex:none}
   #shophead h2{margin:0 1cqw 0 0;font-size:calc(var(--u) * 7);line-height:1}
@@ -39,17 +39,19 @@
   .tab.on{background:#6ef0ff;color:#032031}
   #shopmsg{font-size:calc(var(--u) * 3.2);min-height:calc(var(--u) * 4);color:#ffd23f}
   .card.pack b{font-size:calc(var(--u) * 5);color:#6ef0ff}
-  .port{height:calc(var(--u) * 14);width:auto;align-self:flex-start}
-  .card .tag{font-size:calc(var(--u) * 2.8);color:#ffd23f;min-height:calc(var(--u) * 3.4)}
+  .port{height:calc(var(--u) * 14);width:auto;align-self:flex-start;flex:none}
+  .card .tag{font-size:calc(var(--u) * 2.8);color:#ffd23f;min-height:calc(var(--u) * 3.4);flex:none}
   #gemcount{white-space:nowrap;font-size:calc(var(--u) * 5);font-weight:800;color:#6ef0ff;flex:1}
   #shopclose{font:inherit;font-weight:800;font-size:calc(var(--u) * 4.4);padding:calc(var(--u) * 1.2) calc(var(--u) * 3);border:0;border-radius:99px;background:#ffd23f;color:#2b1700;cursor:pointer}
-  #items{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(15vw,calc(var(--u) * 30)),1fr));grid-auto-rows:min-content;align-content:start;gap:calc(var(--u) * 2) 1.4vw;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch;padding:0 .4vw calc(var(--u) * 2) 0}
-  .card{background:#1a1f38;border-radius:calc(var(--u) * 2);padding:calc(var(--u) * 1.8) calc(var(--u) * 2);display:flex;flex-direction:column;gap:calc(var(--u) * .8);min-width:0;box-sizing:border-box}
-  .card .ic{font-size:calc(var(--u) * 5.2);line-height:1}
-  .card .tp{font-size:calc(var(--u) * 2.6);letter-spacing:.08em;text-transform:uppercase;opacity:.55}
-  .card b{font-size:calc(var(--u) * 3.5);overflow-wrap:anywhere;line-height:1.1}
-  .card small{font-size:calc(var(--u) * 2.4);opacity:.8;line-height:1.25;flex:1;overflow-wrap:anywhere}
-  .card button{font:inherit;font-weight:800;font-size:calc(var(--u) * 3.3);padding:calc(var(--u) * 1) .6vw;border:0;border-radius:calc(var(--u) * 1.4);background:#6ef0ff;color:#032031;cursor:pointer;white-space:nowrap;margin-top:auto;flex:none}
+  #items{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+  #items .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--cardmin),1fr));gap:var(--gap);padding:0 0 var(--gap);align-items:stretch}
+  .card{background:#1a1f38;border-radius:calc(var(--u) * 2);padding:calc(var(--u) * 2);display:flex;flex-direction:column;gap:calc(var(--u) * 1);min-width:0;box-sizing:border-box;position:relative}
+  .card .ic{font-size:calc(var(--u) * 5.2);line-height:1.25;height:1.25em;flex:none}
+  .card .tp{font-size:calc(var(--u) * 2.6);line-height:1.2;letter-spacing:.08em;text-transform:uppercase;opacity:.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
+  .card b{font-size:calc(var(--u) * 3.5);line-height:1.15;height:2.3em;flex:none;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+  .card small{font-size:calc(var(--u) * 2.4);opacity:.8;line-height:1.25;height:2.5em;flex:none;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+  .card small:empty{display:none}
+  .card button{font:inherit;font-weight:800;font-size:calc(var(--u) * 3.3);padding:calc(var(--u) * 1) .6vw;border:0;border-radius:calc(var(--u) * 1.4);background:#6ef0ff;color:#032031;cursor:pointer;white-space:nowrap;margin-top:auto;flex:none;overflow:hidden;text-overflow:ellipsis}
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:2.3cqh;line-height:1.25;opacity:.6}
@@ -171,8 +173,8 @@ const HEROES = [
   {id:'runner',    name:'Runner',    cost:0,   desc:'Balanced all-rounder. Free starter.', skin:'#f2c29b', shirt:'#e63946', pants:'#274c77', shoe:'#fff',    hair:'#3b2314'},
   {id:'ninja',     name:'Ninja',     cost:150, desc:'Jumps 12% higher. Melee swings 25% faster.', skin:'#e8b890', shirt:'#23232e', pants:'#2e2e3c', shoe:'#111',    hair:'#111', jump:1.12, melee:.75},
   {id:'cowboy',    name:'Cowboy',    cost:150, desc:'Carries 9 shots and reloads 35% faster.', skin:'#e8b48c', shirt:'#3b78c4', pants:'#6b4a2a', shoe:'#4a2e14', hair:'#7a4a1a', ammo:3, regen:1.35},
-  {id:'knight',    name:'Knight',    cost:250, desc:'Starts each run with +1 armor. Heavy: lower jump, slower walk.', skin:'#f0c8a0', shirt:'#aab6cf', pants:'#6b7690', shoe:'#555e75', hair:'#5b3a1a', armor:1, jump:.94, walk:.85},
-  {id:'astronaut', name:'Astronaut', cost:250, desc:'Floaty jumps. Pinch the screen (or press G) to fly for 10 seconds.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
+  {id:'knight',    name:'Knight',    cost:250, desc:'+1 armor each run. Heavy: low jump, slow walk.', skin:'#f0c8a0', shirt:'#aab6cf', pants:'#6b7690', shoe:'#555e75', hair:'#5b3a1a', armor:1, jump:.94, walk:.85},
+  {id:'astronaut', name:'Astronaut', cost:250, desc:'Floaty jumps. Pinch or G to fly 10s.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
   {id:'hunter',    name:'Treasure Hunter', cost:300, desc:'Built-in magnet and 25% more diamonds.', skin:'#d9a272', shirt:'#3b9a6a', pants:'#8a6a3a', shoe:'#4a3320', hair:'#2a1a10', gem:1.25, magnet:true},
 ].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
 let save = {gems:0, owned:{}, hero:'runner'};
@@ -192,10 +194,10 @@ const SHOP = [
   {id:'helmet', type:'Armor',  icon:'⛑️', name:'Helmet', cost:80,  desc:'Absorbs 1 crash each run.'},
   {id:'vest',   type:'Armor',  icon:'🦺', name:'Vest',   cost:150, desc:'Absorbs 2 crashes each run.'},
   {id:'boots',  type:'Armor',  icon:'🥾', name:'Boots',  cost:100, desc:'Absorbs 1 crash each run.'},
-  {id:'sniper',   type:'Weapon', icon:'🎯', name:'Sniper',   cost:250, desc:'Instant long shot through every enemy in line. 3 ammo.'},
+  {id:'sniper',   type:'Weapon', icon:'🎯', name:'Sniper',   cost:250, desc:'Instant shot through every enemy. 3 ammo.'},
   {id:'rpg',      type:'Weapon', icon:'💥', name:'RPG',      cost:400, desc:'Slow rocket with a big blast. 2 ammo.'},
   {id:'launcher', type:'Weapon', icon:'🚀', name:'Launcher', cost:500, desc:'Three homing missiles per salvo. 3 ammo.'},
-  {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'Press T / TANK: 12s in an unstoppable tank. Crushes everything, giant rocket launcher. 30s recharge.'},
+  {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'T key: 12s unstoppable tank, giant rockets.'},
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
 // Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
@@ -531,15 +533,16 @@ addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- shop
 const $items = document.getElementById('items'), $msg = document.getElementById('shopmsg');
+const esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 function renderShop() {
   document.getElementById('gemcount').textContent = '💎 ' + save.gems;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === shopTab));
   if (shopTab === 'heroes') {
-    $items.innerHTML = HEROES.map(h => {
+    $items.innerHTML = '<div class="grid">' + HEROES.map(h => {
       const own = h.cost === 0 || has('hero_' + h.id), sel = save.hero === h.id, ok = save.gems >= h.cost;
-      return '<div class="card' + (sel ? ' owned' : '') + '"><canvas class="port" data-hero="' + h.id + '" width="80" height="110"></canvas><b>' + h.name + '</b><small>' + h.desc +
+      return '<div class="card' + (sel ? ' owned' : '') + '" title="' + esc(h.name + ': ' + h.desc) + '"><canvas class="port" data-hero="' + h.id + '" width="80" height="110"></canvas><b>' + h.name + '</b><small>' + h.desc +
         '</small><button data-hero-btn="' + h.id + '"' + (sel || (!own && !ok) ? ' disabled' : '') + '>' + (sel ? 'SELECTED' : own ? 'SELECT' : 'BUY 💎 ' + h.cost) + '</button></div>';
-    }).join('');
+    }).join('') + '</div>';
     const main = ctx;
     $items.querySelectorAll('canvas.port').forEach(c => {
       const h = HEROES.find(x => x.id === c.dataset.hero); ctx = c.getContext('2d');
@@ -549,14 +552,14 @@ function renderShop() {
     return;
   }
   if (shopTab === 'gems') {
-    $items.innerHTML = PACKS.map(p => '<div class="card pack"><span class="ic">💎</span><span class="tp">Gem pack</span><b>' + p.gems + '</b><span class="tag">' + p.tag + '</span><small></small><button data-pack="' + p.id + '">' + p.price + '</button></div>').join('');
+    $items.innerHTML = '<div class="grid">' + PACKS.map(p => '<div class="card pack"><span class="ic">💎</span><span class="tp">Gem pack</span><b>' + p.gems + '</b><span class="tag">' + p.tag + '</span><small></small><button data-pack="' + p.id + '">' + p.price + '</button></div>').join('') + '</div>';
     return;
   }
-  $items.innerHTML = SHOP.map(it => {
+  $items.innerHTML = '<div class="grid">' + SHOP.map(it => {
     const owned = has(it.id), ok = save.gems >= it.cost;
-    return '<div class="card' + (owned ? ' owned' : '') + '"><span class="ic">' + it.icon + '</span><span class="tp">' + it.type + '</span><b>' + it.name + '</b><small>' + it.desc +
+    return '<div class="card' + (owned ? ' owned' : '') + '" title="' + esc(it.name + ': ' + it.desc) + '"><span class="ic">' + it.icon + '</span><span class="tp">' + it.type + '</span><b>' + it.name + '</b><small>' + it.desc +
       '</small><button data-id="' + it.id + '"' + (owned || !ok ? ' disabled' : '') + '>' + (owned ? 'OWNED' : 'BUY 💎 ' + it.cost) + '</button></div>';
-  }).join('');
+  }).join('') + '</div>';
 }
 document.querySelector('#shophead').addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.tab; if (t) { shopTab = t; $msg.textContent = ''; renderShop(); } });
 function openShop() { if ($shopBtn.disabled) return; renderShop(); $shop.classList.remove('hidden'); }
