@@ -96,7 +96,7 @@
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
         <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank &nbsp;·&nbsp; V = battle mech (shop; Q / 1-3 / button = switch its weapon) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank &nbsp;·&nbsp; hold jump in the air = rocket shoes (shop) &nbsp;·&nbsp; V = battle mech (shop; Q / 1-3 / button = switch its weapon) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
   </div>
@@ -324,6 +324,7 @@ const SHOP = [
   {id:'launcher', type:'Weapon', icon:'🚀', name:'Launcher', cost:500, desc:'Three homing missiles per salvo. 3 ammo.'},
   {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'TANK button / T: 12s unstoppable + giant rockets.'},
   {id:'mech',   type:'Vehicle', icon:'🤖', name:'Battle Mech', cost:1000, desc:'Drive a 5-HP mech: machine gun, rail gun, rockets.'},
+  {id:'rocketshoes', type:'Gear', icon:'👟', name:'Rocket Shoes', cost:450, desc:'Hold jump in the air to boost. Refuels on landing.'},
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
 // Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
@@ -344,7 +345,7 @@ const keys = {down:false, jump:false, left:false, right:false};
 let touchDown = false, touchJump = false, touchL = false, touchR = false, touchFire = false;
 
 function resetGame() {
-  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0};
+  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0, rfuel:100, airT:0, boost:false};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = MAX_RETRIES; cpTime = 0; cpPassed = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
@@ -483,6 +484,7 @@ function tankBox() { const p = player; return {x0:p.x - 54, x1:p.x + 58, y0:p.y 
 
 // Battle mech (shop item, 1000 gems): MECH button / V. A suit you really drive: walk left and right, jump, hold FIRE for twin gatling guns,
 // and land from a jump to stomp. Unlike the tank it is not invincible: it soaks 5 hits (smashing what hit it), then it is destroyed.
+const RFUEL = 100, RFLY_TOP = GROUND - 190;   // rocket shoes: frames of thrust per jump, highest point you can boost to
 const MECH_TIME = 1200, MECH_CD = 2400, MECH_HP = 5;
 const MECH_WEAPONS = [{name:'Machine gun', short:'🔫 GUN'}, {name:'Rail gun', short:'⚡ RAIL'}, {name:'Rocket launcher', short:'🚀 ROCKET'}];
 function startMech() {
@@ -552,7 +554,7 @@ function mechStomp() {
 function jump() {
   if (state !== 'play' || player.dead || player.flyT > 0 || player.tankT > 0) return;
   if (player.onGround) {
-    player.vy = level.jv * CH().jump * (player.mechT > 0 ? 1.08 : 1); player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
+    player.vy = level.jv * CH().jump * (player.mechT > 0 ? 1.08 : 1); player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60; player.rfuel = RFUEL; player.airT = 0;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
   } else if (has('slimecannon') && !player.dj) {
     player.dj = true; player.vy = level.jv * CH().jump * .92;
@@ -1276,9 +1278,17 @@ function update(dt) {
     if (p.flyT <= 0) { p.flyT = 0; p.flyCD = FLY_CD; beep(220, .25, 'triangle', .05, -120); }
   } else if (!p.onGround) {
     p.vy += level.g * CH().grav * (wantsSlide() ? 2.4 : 1) * (p.mechT > 0 ? 1.15 : 1) * dt;
+    p.airT += dt; p.boost = false;
+    if (has('rocketshoes') && p.mechT <= 0 && (keys.jump || touchJump) && p.airT > 10 && p.rfuel > 0) {      // rocket shoes: hold jump in the air to thrust upward
+      p.rfuel -= dt; p.boost = true;
+      p.vy -= (level.g * CH().grav + 1.25) * dt; p.vy = Math.max(p.vy, -5.8);
+      if (p.y <= RFLY_TOP && p.vy < 0) p.vy = 0;
+      p.bt = (p.bt || 0) + dt; if (p.bt > 5) { p.bt = 0; beep(170 + Math.random() * 50, .06, 'sawtooth', .035, -60); }
+      dust(p.x - 6 + Math.random() * 12, p.y, 1, Math.random() < .5 ? 'rgba(255,170,60,.95)' : 'rgba(255,255,255,.7)');
+    }
     if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
     p.y += p.vy * dt;
-    if (p.y >= GROUND) { p.y = GROUND; if (p.mechT > 0 && p.vy > 7) mechStomp(); p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; dust(p.x, GROUND, 5); beep(110, .07, 'sine', .06, -50); }
+    if (p.y >= GROUND) { p.y = GROUND; if (p.mechT > 0 && p.vy > 7) mechStomp(); p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; p.rfuel = RFUEL; p.airT = 0; p.boost = false; dust(p.x, GROUND, 5); beep(110, .07, 'sine', .06, -50); }
   } else if ((!boss || mv) && Math.random() < .25 * dt) dust(p.x - 10 * p.face, GROUND, 1, level.snow ? '#fff' : 'rgba(120,100,80,.5)');
 
   if (!boss) { spawnLeft -= speed * dt; if (spawnLeft <= 0) spawn(); }
@@ -1749,7 +1759,7 @@ function drawMech(p) {
 }
 function drawPlayer(p) {
   const ch = p.ch || CH(), pt = !!p.portrait;
-  const x = p.x, y = p.y, skin = ch.skin, shirt = ch.shirt, pants = ch.pants, shoe = !pt && has('boots') && armor > 0 ? '#f5b700' : ch.shoe;
+  const x = p.x, y = p.y, skin = ch.skin, shirt = ch.shirt, pants = ch.pants, shoe = !pt && has('boots') && armor > 0 ? '#f5b700' : !pt && has('rocketshoes') ? '#ff6a2e' : ch.shoe;
   ctx.save();
   if (p.face < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
   if (p.dashT > 0) { ctx.globalAlpha = .25; ctx.fillStyle = '#c58bff'; for (let k = 1; k <= 3; k++) ctx.fillRect(x - 14 - k * 18, y - 60, 12, 56); ctx.globalAlpha = .55; }
@@ -1758,6 +1768,13 @@ function drawPlayer(p) {
     const fl = 10 + Math.random() * 12, warn = p.flyT < 120 && Math.floor(clock / 4) % 2;
     ctx.fillStyle = warn ? '#ff4d4d' : '#ffb347'; ctx.beginPath(); ctx.moveTo(x - 24, y - 28); ctx.lineTo(x - 14, y - 28); ctx.lineTo(x - 19, y - 28 + fl + 8); ctx.fill();
     ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.moveTo(x - 21, y - 28); ctx.lineTo(x - 17, y - 28); ctx.lineTo(x - 19, y - 28 + fl); ctx.fill();
+  }
+  if (p.boost && !pt) {                                       // rocket shoe flames
+    for (const dx of [-9, 9]) {
+      const fl = 12 + Math.random() * 12;
+      ctx.fillStyle = '#ff8a2e'; ctx.beginPath(); ctx.moveTo(x + dx - 5, y - 2); ctx.lineTo(x + dx + 5, y - 2); ctx.lineTo(x + dx, y - 2 + fl + 6); ctx.fill();
+      ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.moveTo(x + dx - 2.5, y - 2); ctx.lineTo(x + dx + 2.5, y - 2); ctx.lineTo(x + dx, y - 2 + fl); ctx.fill();
+    }
   }
   if (!pt) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 22 * (1 - Math.min(.5, (GROUND - y) / 300)), 5, 0, 0, 7); ctx.fill(); }
   if (p.dead) { ctx.translate(x, y - 20); ctx.rotate(-1.3); ctx.translate(-x, -(y - 20)); }
@@ -2109,6 +2126,11 @@ function render() {
     const mwl = MECH_WEAPONS[p.mechW || 0].short, mwd = p.mechT > 0 ? 'block' : 'none';
     if ($mw.textContent !== mwl) $mw.textContent = mwl;
     if ($mw.style.display !== mwd) $mw.style.display = mwd; }
+  if (has('rocketshoes') && state === 'play') {
+    const ry = (save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114) + (has('tank') ? 16 : 0) + (has('mech') ? 16 : 0), rf = Math.max(0, player.rfuel) / RFUEL;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, ry, 150, 10); ctx.fillStyle = player.boost ? '#ffb347' : rf > .25 ? '#ff8a2e' : '#d9534f'; ctx.fillRect(18, ry, 150 * rf, 10);
+    hudTxt('👟 BOOST: hold jump in air', 174, ry - 3, 13);
+  }
   if (has('mech') && state === 'play') {
     const my = (save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114) + (has('tank') ? 16 : 0), mReady = !player.mechT && !player.mechCD;
     const mf = player.mechT > 0 ? player.mechT / MECH_TIME : 1 - player.mechCD / MECH_CD;
@@ -2157,7 +2179,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
