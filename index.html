@@ -21,6 +21,7 @@
   #btn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #fire{position:absolute;right:3cqw;bottom:6cqh;width:15cqh;height:15cqh;border-radius:50%;border:0;background:radial-gradient(#7ff,#09a);color:#012;font:800 3.4cqh system-ui;box-shadow:0 .8cqh 0 #056,0 0 3cqh #0cf8;opacity:.8;touch-action:none}
   #swap{position:absolute;right:21cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#ffd23f;color:#2b1700;font:800 2.6cqh system-ui;box-shadow:0 .6cqh 0 #b36b00;opacity:.85;touch-action:none}
+  #tank.locked{opacity:.5;filter:grayscale(.6)}
   #tank{display:none;position:absolute;right:45cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#7bd06a;color:#0c2a06;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #3f8a2f;opacity:.9;touch-action:none}
   #dash{display:none;position:absolute;right:33cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#c58bff;color:#220a3a;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #7a3fc4;opacity:.85;touch-action:none}
   #mvl,#mvr{display:none;position:absolute;bottom:6cqh;width:14cqh;height:14cqh;border-radius:50%;border:0;background:rgba(255,255,255,.22);color:#fff;font:800 6cqh system-ui;touch-action:none}
@@ -125,7 +126,8 @@ const LEVELS = [
   {name:'Reef',    icon:'🌊', wheel:'#1fa3c9', sky:['#0a5a8c','#74dbe9'], ground:'#e8d49a', dirt:'#b09a5c', bg:'reef',      far:'#2a8db3', speed:7.5, g:.5,  jv:-12,  ground_:['coral','urchin','crab'],      air:'jelly', airP:.33, hiAir:1, wob:16, mult:1, text:'Underwater drift. Crabs scuttle fast.'},
   {name:'Turbo',   icon:'⚡', wheel:'#ff3d9a', sky:['#1a0033','#ff2d95'], ground:'#1b1b2f', dirt:'#0f0f1c', bg:'stripes',   far:'#4d0a60', speed:11,  g:.8,  jv:-15,  ground_:['crystal','crate'],  air:'drone', airP:.3,  mult:2, text:'Maximum speed. Double points!'},
 ];
-const LEVEL_FRAMES = 60 * 24;   // ~24 s per wheel spin
+const LEVEL_FRAMES = 60 * 60;   // ~60 s per wheel spin
+const CHECKPOINTS = [.25, .5, .75], MAX_RETRIES = 3;   // flags on the progress bar; a crash rewinds to the last one
 
 // ---------------------------------------------------------------- audio
 let actx = null;
@@ -197,7 +199,7 @@ const SHOP = [
   {id:'sniper',   type:'Weapon', icon:'🎯', name:'Sniper',   cost:250, desc:'Instant shot through every enemy. 3 ammo.'},
   {id:'rpg',      type:'Weapon', icon:'💥', name:'RPG',      cost:400, desc:'Slow rocket with a big blast. 2 ammo.'},
   {id:'launcher', type:'Weapon', icon:'🚀', name:'Launcher', cost:500, desc:'Three homing missiles per salvo. 3 ammo.'},
-  {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'T key: 12s unstoppable tank, giant rockets.'},
+  {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'TANK button / T: 12s unstoppable + giant rockets.'},
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
 // Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
@@ -211,6 +213,7 @@ const PACKS = [
 ];
 let shopTab = 'gear';
 let gems, runGems, armor, gemLeft, toastMsg = '';
+let retries = MAX_RETRIES, cpTime = 0, cpPassed = 0;
 let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60, minis = [], chip = 0;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
 const keys = {down:false, jump:false, left:false, right:false};
@@ -219,7 +222,7 @@ let touchDown = false, touchJump = false, touchL = false, touchR = false;
 function resetGame() {
   player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
-  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
+  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = MAX_RETRIES; cpTime = 0; cpPassed = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
 resetGame();
@@ -299,7 +302,7 @@ function spinWheel() {
 
 function startLevel() {
   overlay.classList.add('hidden');
-  obstacles = []; bullets = []; ammo = maxAmmo(); levelTime = 0; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
+  obstacles = []; bullets = []; ammo = maxAmmo(); levelTime = 0; cpTime = 0; cpPassed = 0; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
   state = 'play';
 }
 
@@ -367,7 +370,7 @@ function setWeapon(i) {
   weapon = i; player.atk = null; toast = 70; toastMsg = WEAPONS[i].name; beep(520, .05, 'triangle', .05);
 }
 function setBossUI() { for (const id of ['mvl', 'mvr']) document.getElementById(id).style.display = boss ? 'block' : 'none'; }
-function refreshButtons() { document.getElementById('dash').style.display = has('reapersaw') ? 'block' : 'none'; document.getElementById('tank').style.display = has('tank') ? 'block' : 'none'; }
+function refreshButtons() { document.getElementById('dash').style.display = has('reapersaw') ? 'block' : 'none'; document.getElementById('tank').style.display = 'block'; document.getElementById('tank').classList.toggle('locked', !has('tank')); }
 function nextWeapon() { for (let k = 1; k <= WEAPONS.length; k++) { const i = (weapon + k) % WEAPONS.length; if (ownsWeapon(WEAPONS[i])) return setWeapon(i); } }
 function attack() {
   if (state !== 'play' || player.dead || fireCD > 0) return;
@@ -465,7 +468,8 @@ const $fire = document.getElementById('fire');
 $fire.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); attack(); });
 document.getElementById('swap').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextWeapon(); });
 document.getElementById('dash').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); dash(); });
-document.getElementById('tank').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); startTank(); });
+const $tankBtn = document.getElementById('tank');
+$tankBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); if (!has('tank')) { toast = 140; toastMsg = 'Buy the Battle Tank in the shop · 700 gems'; beep(150, .1, 'square', .04); return; } startTank(); });
 refreshButtons();
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
@@ -1002,12 +1006,23 @@ function dust(x, y, n, col = 'rgba(255,255,255,.6)') {
   for (let i = 0; i < n; i++) particles.push({x, y, vx:-Math.random() * 2 - 1, vy:-Math.random() * 2, life:20 + Math.random() * 15, r:2 + Math.random() * 3, col});
 }
 
+function respawn() {
+  const p = player;
+  retries--; p.inv = 130; p.dead = false; p.x = 130; p.y = GROUND; p.vy = 0; p.onGround = true; p.sliding = false; p.atk = null; p.flyT = 0; p.tankT = 0;
+  armor = Math.max(armor, 1); ammo = maxAmmo(); shake = 14; flash = .8;
+  if (!boss) { obstacles = []; levelTime = cpTime; spawnLeft = 420; gems = []; gemLeft = 200; }
+  eps = []; bullets = []; supers = [];
+  dust(p.x, p.y - 30, 24, 'rgba(255,200,120,.9)'); beep(330, .15, 'triangle', .06); setTimeout(() => beep(520, .2, 'triangle', .06), 130);
+  toast = 130; toastMsg = (boss ? 'Retry' : cpPassed ? 'Checkpoint ' + cpPassed : 'Level start') + '  ·  ' + retries + ' left';
+}
 function die() {
+  if (player.dead || state !== 'play') return;
+  if (retries > 0) { respawn(); return; }
   player.dead = true; state = 'over'; shake = 18; flash = 1;
   beep(220, .5, 'sawtooth', .08, -180);
   dust(player.x, player.y - 30, 24, 'rgba(255,200,120,.9)');
   if (score > best) { best = score; try { localStorage.setItem('wheelrunner.best', best); } catch (e) {} }
-  setTimeout(() => showOverlay('CRASHED!', 'Score ' + score + '  ·  Best ' + best + '  ·  Levels ' + levelsDone + '  ·  💎 +' + runGems, 'SPIN AGAIN'), 900);
+  setTimeout(() => showOverlay('CRASHED!', 'No retries left.  Score ' + score + '  ·  Best ' + best + '  ·  Levels ' + levelsDone + '  ·  💎 +' + runGems, 'SPIN AGAIN'), 900);
 }
 
 // ---------------------------------------------------------------- update
@@ -1158,10 +1173,14 @@ function update(dt) {
   }
   obstacles = obstacles.filter(o => !o.dead && o.x > -120 && o.y < GROUND + 40);
 
+  if (!boss && state === 'play' && cpPassed < CHECKPOINTS.length && levelTime >= CHECKPOINTS[cpPassed] * LEVEL_FRAMES) {
+    cpTime = levelTime; cpPassed++; armor = Math.min(armorMax(), armor + 1); ammo = maxAmmo(); toast = 110; toastMsg = 'Checkpoint ' + cpPassed + ' of ' + CHECKPOINTS.length;
+    beep(700, .12, 'triangle', .06); setTimeout(() => beep(1050, .2, 'triangle', .06), 120); dust(player.x, player.y - 30, 10, 'rgba(120,255,160,.9)');
+  }
   if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss && (levelsDone + 1) % 10 === 0) {
     levelsDone++; const n = levelsDone / 10 - 1; startBoss(n % BOSSES.length, Math.floor(n / BOSSES.length));
   } else if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss) {
-    levelsDone++; state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
+    levelsDone++; retries = Math.min(MAX_RETRIES, retries + 1); state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
     showOverlay('LEVEL CLEAR!', 'Spin the wheel to pick your next level.', 'SPIN');
   }
 }
@@ -1780,6 +1799,8 @@ function render() {
   const prog = state === 'title' ? 0 : Math.min(1, levelTime / LEVEL_FRAMES);   // full while a boss is up
   ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(18, 46, 160, 8);
   ctx.fillStyle = level.wheel; ctx.fillRect(18, 46, 160 * prog, 8);
+  CHECKPOINTS.forEach((f, i) => { const fx = 18 + 160 * f; ctx.fillStyle = i < cpPassed ? '#6dffb0' : 'rgba(255,255,255,.7)'; ctx.fillRect(fx - 1, 42, 2, 16); ctx.beginPath(); ctx.moveTo(fx + 1, 42); ctx.lineTo(fx + 8, 45); ctx.lineTo(fx + 1, 48); ctx.fill(); });
+  if (state !== 'title') hudTxt('❤ ' + retries + '/' + MAX_RETRIES + ' retries', W - 18, 118, 14, 'right');
   for (let i = 0; i < maxAmmo(); i++) {
     const px = 18 + i * 22; ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(px, 62, 18, 9);
     const f = i < ammo ? 1 : i === ammo ? ammoT / AMMO_REGEN : 0;
@@ -1802,6 +1823,8 @@ function render() {
     const perks = [['slimecannon', '🦘'], ['railgun', '🚀'], ['titanfist', '🚜'], ['reapersaw', '⚡']].filter(k => has(k[0]));
     ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
   }
+  { const p = player, lab = !has('tank') ? '🔒 TANK' : p.tankT > 0 ? 'TANK ' + Math.ceil(p.tankT / 60) + 's' : p.tankCD > 0 ? Math.ceil(p.tankCD / 60) + 's' : 'TANK';
+    if ($tankBtn.textContent !== lab) $tankBtn.textContent = lab; }
   if (has('tank') && state === 'play') {
     const ty = save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114, tReady = !player.tankT && !player.tankCD;
     const tf = player.tankT > 0 ? player.tankT / TANK_TIME : 1 - player.tankCD / TANK_CD;
@@ -1844,7 +1867,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
