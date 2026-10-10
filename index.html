@@ -21,6 +21,7 @@
   #btn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #fire{position:absolute;right:3cqw;bottom:6cqh;width:15cqh;height:15cqh;border-radius:50%;border:0;background:radial-gradient(#7ff,#09a);color:#012;font:800 3.4cqh system-ui;box-shadow:0 .8cqh 0 #056,0 0 3cqh #0cf8;opacity:.8;touch-action:none}
   #swap{position:absolute;right:21cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#ffd23f;color:#2b1700;font:800 2.6cqh system-ui;box-shadow:0 .6cqh 0 #b36b00;opacity:.85;touch-action:none}
+  #tank{display:none;position:absolute;right:45cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#7bd06a;color:#0c2a06;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #3f8a2f;opacity:.9;touch-action:none}
   #dash{display:none;position:absolute;right:33cqh;bottom:6cqh;width:10cqh;height:10cqh;border-radius:50%;border:0;background:#c58bff;color:#220a3a;font:800 2.4cqh system-ui;box-shadow:0 .6cqh 0 #7a3fc4;opacity:.85;touch-action:none}
   #mvl,#mvr{display:none;position:absolute;bottom:6cqh;width:14cqh;height:14cqh;border-radius:50%;border:0;background:rgba(255,255,255,.22);color:#fff;font:800 6cqh system-ui;touch-action:none}
   #mvl{left:3cqw}
@@ -72,6 +73,7 @@
     <button id="fire" aria-label="Fire">FIRE</button>
     <button id="mvl" aria-label="Move left">◀</button><button id="mvr" aria-label="Move right">▶</button>
     <button id="dash" aria-label="Dash">DASH</button>
+    <button id="tank" aria-label="Battle tank">TANK</button>
     <button id="swap" aria-label="Switch weapon">SWAP</button>
     <div id="overlay">
       <canvas id="wheel" width="560" height="560"></canvas>
@@ -82,7 +84,7 @@
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
         <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank (shop) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
     <div id="shop" class="hidden">
@@ -193,6 +195,7 @@ const SHOP = [
   {id:'sniper',   type:'Weapon', icon:'🎯', name:'Sniper',   cost:250, desc:'Instant long shot through every enemy in line. 3 ammo.'},
   {id:'rpg',      type:'Weapon', icon:'💥', name:'RPG',      cost:400, desc:'Slow rocket with a big blast. 2 ammo.'},
   {id:'launcher', type:'Weapon', icon:'🚀', name:'Launcher', cost:500, desc:'Three homing missiles per salvo. 3 ammo.'},
+  {id:'tank',   type:'Vehicle', icon:'🛡️', name:'Battle Tank', cost:700, desc:'Press T / TANK: 12s in an unstoppable tank. Crushes everything, giant rocket launcher. 30s recharge.'},
   {id:'magnet', type:'Gear',   icon:'🧲', name:'Magnet', cost:120, desc:'Pulls nearby diamonds to you.'},
 ];
 // Real-money gem packs. Payments are NOT connected: paste a hosted checkout link per pack below.
@@ -212,7 +215,7 @@ const keys = {down:false, jump:false, left:false, right:false};
 let touchDown = false, touchJump = false, touchL = false, touchR = false;
 
 function resetGame() {
-  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0};
+  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
@@ -310,7 +313,7 @@ function showOverlay(title, text, btn) {
 const FLY_TIME = 600, FLY_CD = 1200, FLY_TOP = GROUND - 130;      // frames at 60fps: 10s of flight, 20s recharge
 function startFly() {
   const p = player;
-  if (state !== 'play' || p.dead || save.hero !== 'astronaut' || p.flyT > 0 || p.flyCD > 0) return;
+  if (state !== 'play' || p.dead || save.hero !== 'astronaut' || p.flyT > 0 || p.flyCD > 0 || p.tankT > 0) return;
   p.flyT = FLY_TIME; p.onGround = false; p.sliding = false; p.vy = -6;
   beep(300, .4, 'sawtooth', .05, 500); dust(p.x - 12, p.y, 10, 'rgba(255,200,120,.9)');
 }
@@ -329,8 +332,25 @@ const dropPinch = e => { pinchPts.delete(e.pointerId); if (pinchPts.size < 2) pi
 addEventListener('pointerup', dropPinch); addEventListener('pointercancel', dropPinch);
 addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); startFly(); } }, {passive:false});
 
+// Battle tank (shop item): T / TANK button for 12 seconds of an invulnerable tank that crushes everything it rolls over
+// and fires giant rockets from the front launcher. Recharges for 30 seconds.
+const TANK_TIME = 720, TANK_CD = 1800;
+function startTank() {
+  const p = player;
+  if (state !== 'play' || p.dead || !has('tank') || p.tankT > 0 || p.tankCD > 0 || p.flyT > 0) return;
+  p.tankT = TANK_TIME; p.sliding = false; p.atk = null; shake = 8;
+  beep(70, .6, 'sawtooth', .09, 60); dust(p.x, GROUND, 14, 'rgba(120,100,80,.8)');
+}
+function fireTank() {
+  const p = player, f = p.face;
+  fireCD = 40; p.flash = 10; shake = Math.max(shake, 7);
+  supers.push({kind:'rpg', big:true, x:p.x + 96 * f, y:p.y - 44, vx:11 * f, vy:0, dir:f, t:0});
+  beep(90, .45, 'sawtooth', .1, 120); dust(p.x + 92 * f, p.y - 44, 8, 'rgba(255,200,120,.9)');
+}
+function tankBox() { const p = player; return {x0:p.x - 54, x1:p.x + 58, y0:p.y - 56, y1:p.y}; }
+
 function jump() {
-  if (state !== 'play' || player.dead || player.flyT > 0) return;
+  if (state !== 'play' || player.dead || player.flyT > 0 || player.tankT > 0) return;
   if (player.onGround) {
     player.vy = level.jv * CH().jump; player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
@@ -345,10 +365,11 @@ function setWeapon(i) {
   weapon = i; player.atk = null; toast = 70; toastMsg = WEAPONS[i].name; beep(520, .05, 'triangle', .05);
 }
 function setBossUI() { for (const id of ['mvl', 'mvr']) document.getElementById(id).style.display = boss ? 'block' : 'none'; }
-function refreshButtons() { document.getElementById('dash').style.display = has('reapersaw') ? 'block' : 'none'; }
+function refreshButtons() { document.getElementById('dash').style.display = has('reapersaw') ? 'block' : 'none'; document.getElementById('tank').style.display = has('tank') ? 'block' : 'none'; }
 function nextWeapon() { for (let k = 1; k <= WEAPONS.length; k++) { const i = (weapon + k) % WEAPONS.length; if (ownsWeapon(WEAPONS[i])) return setWeapon(i); } }
 function attack() {
   if (state !== 'play' || player.dead || fireCD > 0) return;
+  if (player.tankT > 0) { if (boss && !boss.dead && !(keys.left || keys.right || touchL || touchR)) player.face = boss.x < player.x ? -1 : 1; return fireTank(); }
   if (boss && !boss.dead && !(keys.left || keys.right || touchL || touchR)) player.face = boss.x < player.x ? -1 : 1;   // auto-face the boss when standing still
   if (weapon === 0) return shoot();
   const w = WEAPONS[weapon];
@@ -416,6 +437,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') attack();
   else if (e.code === 'KeyQ') nextWeapon();
   else if (e.code === 'KeyG') startFly();
+  else if (e.code === 'KeyT') startTank();
   else if (/^Digit[0-9]$/.test(e.code)) setWeapon(e.code === 'Digit0' ? 9 : +e.code.slice(5) - 1);
   else if (e.code === 'Minus') setWeapon(10);
   else if (e.code === 'Enter') primary();
@@ -441,6 +463,7 @@ const $fire = document.getElementById('fire');
 $fire.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); attack(); });
 document.getElementById('swap').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); nextWeapon(); });
 document.getElementById('dash').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); dash(); });
+document.getElementById('tank').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); startTank(); });
 refreshButtons();
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
@@ -832,7 +855,7 @@ function explode(x, y, r, bossDmg) {
 }
 function stepMissile(s, dt) {
   s.px = s.x; s.py = s.y;
-  const isRpg = s.kind === 'rpg', r = isRpg ? 95 : 56;
+  const isRpg = s.kind === 'rpg', r = s.big ? 140 : isRpg ? 95 : 56;
   if (!isRpg) {                                         // homing: steer toward the nearest target
     let best = null, bd = 1e9;
     const cand = [];
@@ -852,7 +875,7 @@ function stepMissile(s, dt) {
   for (const e of eps) if (e.kind !== 'beam' && e.kind !== 'wave' && !e.dead && e.x + e.w / 2 > x0 && e.x - e.w / 2 < x1 && e.y + e.h / 2 > y0 && e.y - e.h / 2 < y1) hit = true;
   if (boss && !boss.dead) { const b = bossBox(boss); if (b[2] > x0 && b[0] < x1 && b[3] > y0 && b[1] < y1) { hit = true; direct = true; } }
   if (s.y >= GROUND - 4) hit = true;
-  if (hit) { explode(s.x, s.y, r, isRpg ? (direct ? 5 : 3) : (direct ? 3 : 1)); s.gone = true; return; }
+  if (hit) { explode(s.x, s.y, r, s.big ? (direct ? 3 : 2) : isRpg ? (direct ? 5 : 3) : (direct ? 3 : 1)); s.gone = true; return; }
   if (s.x < -60 || s.x > W + 60 || s.y < -80 || (!isRpg && s.life <= 0)) s.gone = true;
 }
 function updateSupers(dt) {
@@ -906,7 +929,7 @@ function drawSupers() {
       ctx.fillStyle = 'rgba(255,240,180,' + a * .35 + ')'; ctx.fillRect(x0, s.y - 6 * a - 2, len, 12 * a + 4);
       ctx.fillStyle = 'rgba(255,255,255,' + a + ')'; ctx.fillRect(x0, s.y - 1.5, len, 3);
     } else if (s.kind === 'rpg') {
-      ctx.translate(s.x, s.y); if (s.dir < 0) ctx.scale(-1, 1);
+      ctx.translate(s.x, s.y); if (s.dir < 0) ctx.scale(-1, 1); if (s.big) ctx.scale(1.9, 1.9);
       ctx.fillStyle = '#ff9d2e'; ctx.beginPath(); ctx.moveTo(-14, -4); ctx.lineTo(-34 - Math.sin(s.t * 2) * 5, 0); ctx.lineTo(-14, 4); ctx.fill();
       ctx.fillStyle = '#5b6b48'; ctx.fillRect(-14, -5, 22, 10); ctx.fillStyle = '#c8442f'; ctx.beginPath(); ctx.moveTo(8, -7); ctx.lineTo(22, 0); ctx.lineTo(8, 7); ctx.fill();
     } else if (s.kind === 'missile') {
@@ -1048,6 +1071,8 @@ function update(dt) {
     else if (o.kind === 'hopper') o.y = GROUND - Math.abs(Math.sin(o.t * .5)) * 64;
     else if (o.base !== undefined) o.y = o.base + Math.sin(o.t * .8) * (o.amp || 8);
   }
+  for (const g of gems) keepGemClear(g);              // re-check now that enemies have moved
+  gems = gems.filter(g => !g.got);
   // bullets: swept test so fast shots never skip over thin targets
   for (const b of bullets) {
     b.px = b.x; b.x += b.vx * dt;
@@ -1099,6 +1124,23 @@ function update(dt) {
   }
   updateSupers(dt);
   bullets = bullets.filter(b => !b.gone && b.x < W + 40 && b.x > -60);
+  if (p.tankCD > 0) p.tankCD -= dt;
+  if (p.tankT > 0) {                                    // tank: untouchable, flattens whatever it touches
+    p.tankT -= dt; p.inv = Math.max(p.inv, 3); p.sliding = false;
+    const tb = tankBox();
+    for (const o of obstacles) {
+      if (o.dead || o.x > tb.x1 || o.x + o.w < tb.x0 || o.y < tb.y0 || o.y - o.h > tb.y1) continue;
+      if (isEnemy(o)) killEnemy(o); else { o.dead = true; scoreAcc += 20 * level.mult; dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,200,120,.95)'); }
+      shake = Math.max(shake, 4); beep(100, .08, 'sawtooth', .05, -40);
+    }
+    if (boss) {
+      hurtMinis(tb.x0, tb.y0, tb.x1, tb.y1);
+      p.ram = (p.ram || 0) - dt;
+      if (!boss.dead && p.ram <= 0) { const bb = bossBox(boss); if (bb[2] > tb.x0 && bb[0] < tb.x1 && bb[3] > tb.y0 && bb[1] < tb.y1) { p.ram = 60; damageBoss(1); shake = 8; } }
+    }
+    if (Math.random() < .5) dust(p.x - 50 * p.face, GROUND, 1, 'rgba(120,100,80,.6)');
+    if (p.tankT <= 0) { p.tankT = 0; p.tankCD = TANK_CD; p.inv = Math.max(p.inv, 50); beep(160, .3, 'triangle', .05, -80); }
+  }
   obstacles = obstacles.filter(o => !o.dead);
   for (const o of obstacles) {
     if (!hit(o) || p.inv > 0) continue;
@@ -1375,6 +1417,34 @@ function accessory(ch, hx, hy) {          // hat / mask / helmet for each hero, 
   else if (id === 'cowboy') { ctx.fillStyle = '#8b5a2b'; ctx.beginPath(); ctx.ellipse(hx, hy - 8, 18, 4.5, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.roundRect(hx - 8, hy - 20, 16, 14, 4); ctx.fill(); ctx.fillStyle = '#e0b43a'; ctx.fillRect(hx - 8, hy - 11, 16, 3); }
   else if (id === 'astronaut') { ctx.fillStyle = 'rgba(150,220,255,.28)'; ctx.beginPath(); ctx.arc(hx, hy, 14, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#cfd6e4'; ctx.fillRect(hx - 20, hy + 12, 10, 24); }
   else if (id === 'hunter') { ctx.fillStyle = '#d8c08a'; ctx.beginPath(); ctx.arc(hx, hy - 3, 12, Math.PI, 0); ctx.fill(); ctx.beginPath(); ctx.ellipse(hx, hy - 3, 17, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#7a5a2a'; ctx.fillRect(hx - 12, hy - 8, 24, 3); }
+}
+function drawTank(p) {
+  const x = p.x, y = p.y, warn = p.tankT < 120 && Math.floor(clock / 4) % 2, rec = Math.max(0, p.flash || 0) * 1.2;
+  ctx.save();
+  if (p.face < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(x + 2, GROUND + 3, 62, 6, 0, 0, 7); ctx.fill();
+  // treads with moving links
+  ctx.fillStyle = '#23272e'; ctx.beginPath(); ctx.roundRect(x - 58, y - 22, 116, 22, 11); ctx.fill();
+  ctx.fillStyle = '#4a515c'; for (let k = 0; k < 12; k++) { const lx = x - 54 + ((k * 9 + p.phase * 160) % 108); ctx.fillRect(lx, y - 21, 3, 20); }
+  ctx.fillStyle = '#3a4048'; for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.arc(x - 40 + k * 20, y - 11, 8, 0, 7); ctx.fill(); ctx.fillStyle = '#6b7380'; ctx.beginPath(); ctx.arc(x - 40 + k * 20, y - 11, 3, 0, 7); ctx.fill(); ctx.fillStyle = '#3a4048'; }
+  // hull
+  ctx.fillStyle = warn ? '#b8483a' : '#5f8240'; ctx.beginPath(); ctx.moveTo(x - 52, y - 20); ctx.lineTo(x + 52, y - 20); ctx.lineTo(x + 40, y - 40); ctx.lineTo(x - 46, y - 40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(x - 50, y - 26, 100, 4);
+  ctx.fillStyle = '#e9d36a'; ctx.beginPath(); ctx.arc(x - 34, y - 31, 5, 0, 7); ctx.fill();            // star badge
+  // turret
+  ctx.fillStyle = warn ? '#c9564a' : '#6c9448'; ctx.beginPath(); ctx.roundRect(x - 24, y - 62, 58, 24, 8); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x - 20, y - 59, 48, 4);
+  // driver peeking out of the hatch
+  ctx.fillStyle = CH().skin; ctx.beginPath(); ctx.arc(x - 6, y - 68, 8, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2d3a22'; ctx.beginPath(); ctx.arc(x - 6, y - 71, 9, Math.PI, 0); ctx.fill();
+  // giant rocket launcher at the front: thick barrel, muzzle brake and a loaded warhead, with recoil
+  const bx = x + 30 - rec;
+  ctx.fillStyle = '#353b46'; ctx.beginPath(); ctx.roundRect(bx, y - 58, 76, 18, 5); ctx.fill();
+  ctx.fillStyle = '#4c5461'; ctx.fillRect(bx + 6, y - 56, 62, 4);
+  ctx.fillStyle = '#272c35'; ctx.beginPath(); ctx.roundRect(bx + 68, y - 63, 14, 28, 4); ctx.fill();
+  ctx.fillStyle = '#c8442f'; ctx.beginPath(); ctx.moveTo(bx + 78, y - 55); ctx.lineTo(bx + 96, y - 49); ctx.lineTo(bx + 78, y - 43); ctx.closePath(); ctx.fill();
+  if (p.flash > 6) { ctx.fillStyle = 'rgba(255,220,120,.95)'; ctx.beginPath(); ctx.arc(bx + 92, y - 49, 14 + Math.random() * 6, 0, 7); ctx.fill(); }
+  ctx.restore();
 }
 function drawPlayer(p) {
   const ch = p.ch || CH(), pt = !!p.portrait;
@@ -1685,7 +1755,7 @@ function render() {
     ctx.fillStyle = tg; ctx.fillRect(d > 0 ? b.x - 30 : b.x, b.y - 3, 46, 6);
     ctx.fillStyle = '#e8ffff'; ctx.beginPath(); ctx.roundRect(b.x, b.y - 4, 16, 8, 4); ctx.fill();
   }
-  drawPlayer(player);
+  player.tankT > 0 ? drawTank(player) : drawPlayer(player);
   ctx.restore();
   if (flash > .02) { ctx.fillStyle = 'rgba(255,255,255,' + flash * .7 + ')'; ctx.fillRect(0, 0, W, H); flash *= .85; }
 
@@ -1729,6 +1799,12 @@ function render() {
     const perks = [['slimecannon', '🦘'], ['railgun', '🚀'], ['titanfist', '🚜'], ['reapersaw', '⚡']].filter(k => has(k[0]));
     ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
   }
+  if (has('tank') && state === 'play') {
+    const ty = save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114, tReady = !player.tankT && !player.tankCD;
+    const tf = player.tankT > 0 ? player.tankT / TANK_TIME : 1 - player.tankCD / TANK_CD;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, ty, 150, 10); ctx.fillStyle = player.tankT > 0 ? '#9be36a' : tReady ? '#6dffb0' : '#7a8aa8'; ctx.fillRect(18, ty, 150 * tf, 10);
+    hudTxt(player.tankT > 0 ? '🛡️ TANK ' + Math.ceil(player.tankT / 60) + 's' : tReady ? '🛡️ PRESS T FOR TANK' : '🛡️ ' + Math.ceil(player.tankCD / 60) + 's', 174, ty - 3, 13);
+  }
   if (save.hero === 'astronaut' && state === 'play') {
     const fy = anyOP() ? 138 : 114, ready = !player.flyT && !player.flyCD;
     const f = player.flyT > 0 ? player.flyT / FLY_TIME : 1 - player.flyCD / FLY_CD;
@@ -1765,7 +1841,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
