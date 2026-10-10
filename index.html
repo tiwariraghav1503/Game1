@@ -34,7 +34,10 @@
   #mvl{left:3cqw}
   #mvr{left:calc(3cqw + 17cqh)}
   #fire:active{transform:translateY(.6cqh)}
-  #btns{display:flex;gap:2cqw;align-items:center}
+  #btns{display:flex;gap:1.6cqw;align-items:center;flex-wrap:wrap}
+  #dailyBtn,#shareBtn{font:inherit;font-weight:800;font-size:3.6cqh;padding:1.2cqh 2.4cqh;border:0;border-radius:99px;background:linear-gradient(#ffb36e,#f2742f);color:#3a1500;cursor:pointer;box-shadow:0 .6cqh 0 #a8480f}
+  #shareBtn{display:none;background:linear-gradient(#a8ffcf,#34c98a);color:#04281a;box-shadow:0 .6cqh 0 #1a8a5e}
+  #dailyBtn:active,#shareBtn:active{transform:translateY(.5cqh)}
   #shopBtn{font:inherit;font-weight:800;font-size:4.4cqh;padding:1.6cqh 3cqh;border:0;border-radius:99px;background:linear-gradient(#6ef0ff,#16a6d9);color:#032031;cursor:pointer;box-shadow:0 .8cqh 0 #0b6a8f}
   #shopBtn:active{transform:translateY(.6cqh);box-shadow:0 .2cqh 0 #0b6a8f}
   #shopBtn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
@@ -97,7 +100,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
-        <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
+        <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button><button id="dailyBtn">DAILY 📅</button><button id="shareBtn">SHARE SCORE</button></div>
         <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank &nbsp;·&nbsp; hold jump in the air = rocket shoes (shop) &nbsp;·&nbsp; V = battle mech (shop; Q / 1-3 / button = switch its weapon) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
@@ -343,8 +346,13 @@ const PACKS = [
 let shopTab = 'gear';
 let gems, runGems, armor, gemLeft, toastMsg = '';
 let retries = MAX_RETRIES, cpTime = 0, cpPassed = 0;
-let dailyRun = false, rngS = 1;                           // daily challenge runs use a seeded generator so everyone gets the same levels and obstacles
-const rng = () => { if (!dailyRun) return Math.random(); rngS = (rngS + 0x6D2B79F5) | 0; let t = Math.imul(rngS ^ (rngS >>> 15), 1 | rngS); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+let dailyRun = false, rngBase = 1; const rngSt = {};
+// Daily challenge runs use seeded generators, one stream per kind of event ('s' obstacles, 'g' gems, 'p' pickups, 'w' wheel), so the nth obstacle is the same for everyone even if timing differs.
+const rng = (st = 'w') => {
+  if (!dailyRun) return Math.random();
+  let a = rngSt[st] === undefined ? (rngBase + strHash(st)) | 0 : rngSt[st]; a = (a + 0x6D2B79F5) | 0; rngSt[st] = a;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 // Wheel modifiers: a spin can also roll one of these on top of the level.
 const MODS = [
   {id:'gems2', icon:'💎', name:'DOUBLE GEMS', text:'Every diamond is worth double this level.'},
@@ -371,8 +379,8 @@ const PICKUPS = {shield:{icon:'🛡️', col:'#46d3ff', name:'SHIELD'}, slow:{ic
   mag:{icon:'🧲', col:'#ff6b6b', name:'MAGNET'}, boost:{icon:'🚀', col:'#ff9d2e', name:'ROCKET BOOST: hold jump!'}};
 let slowT = 0, x2T = 0, magT = 0, boostT = 0, pkLeft = 480;
 function spawnPickup(type) {
-  const keys_ = Object.keys(PICKUPS), t = type || keys_[Math.floor(rng() * keys_.length)];
-  gems.push({x:W + 40, y:GROUND - 70 - rng() * 35, t:0, v:0, pk:t});
+  const keys_ = Object.keys(PICKUPS), t = type || keys_[Math.floor(rng('p') * keys_.length)];
+  gems.push({x:W + 40, y:GROUND - 70 - rng('p') * 35, t:0, v:0, pk:t});
 }
 function activatePickup(t) {
   const p = player, d = PICKUPS[t];
@@ -674,9 +682,9 @@ function dash() {
 function wantsSlide() { return keys.down || touchDown; }
 function primary() {
   if (!$shop.classList.contains('hidden')) return;
-  if (state === 'title') { resetGame(); spinWheel(); }
+  if (state === 'title') { dailyRun = false; resetGame(); spinWheel(); }
   else if (state === 'wheel') spinWheel();
-  else if (state === 'over') { resetGame(); levelIdx = 0; spinWheel(); }
+  else if (state === 'over') { dailyRun = false; resetGame(); levelIdx = 0; spinWheel(); }
 }
 addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(e.code)) e.preventDefault();
@@ -814,10 +822,24 @@ function missionEvt(k, n = 1) {
   if (changed && k !== 'gems') persist();
 }
 
+// Daily challenge: everyone gets the same levels, modifiers and obstacles on a given date. Share your score as text.
+const $daily = document.getElementById('dailyBtn'), $share = document.getElementById('shareBtn');
+$daily.addEventListener('click', () => {
+  if (!$shop.classList.contains('hidden') || (state !== 'title' && state !== 'over')) return;
+  dailyRun = true; rngBase = strHash('daily' + dayKey()); for (const k in rngSt) delete rngSt[k]; resetGame(); levelIdx = 0; spinWheel();
+});
+$share.addEventListener('click', async () => {
+  const url = location.href.split('?')[0] + (dailyRun ? '?daily=1' : '');
+  const txt = (dailyRun ? '📅 Wheel Runner Daily ' + dayKey() : '🎡 Wheel Runner') + ': ' + score + ' pts · ' + levelsDone + ' levels · best combo ' + bestCombo + '\n' + url;
+  try { if (navigator.share) { await navigator.share({text:txt}); return; } await navigator.clipboard.writeText(txt); $result.textContent = 'Copied! Paste it to a friend.'; }
+  catch (e) { try { await navigator.clipboard.writeText(txt); $result.textContent = 'Copied! Paste it to a friend.'; } catch (e2) { window.prompt('Copy your score:', txt); } }
+});
+
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
 const ownedHeroes = () => HEROES.filter(h => h.cost === 0 || has('hero_' + h.id));
 function renderPicker() {
+  $daily.style.display = state === 'title' || state === 'over' ? 'inline-block' : 'none'; $share.style.display = 'none';
   ensureMissions(); const mo = missionsOpen(); $shopBtn.innerHTML = 'SHOP 💎' + (mo ? ' <small style="font-size:.6em">🎯' + mo + '</small>' : '');
   const can = state === 'title' || state === 'over';          // heroes are locked in for the rest of a run
   $hp.style.display = can ? 'flex' : 'none';
@@ -915,14 +937,14 @@ $items.addEventListener('click', e => {
 // ---------------------------------------------------------------- gems
 function gemArc(x0, w, topY) {
   const n = 5;
-  for (let i = 0; i < n; i++) gems.push({x:x0 - 8 + i * (w + 36) / (n - 1), y:Math.max(GROUND - 126, topY - 22 - Math.sin(Math.PI * i / (n - 1)) * 30), t:rng() * 9, v:1});
+  for (let i = 0; i < n; i++) gems.push({x:x0 - 8 + i * (w + 36) / (n - 1), y:Math.max(GROUND - 126, topY - 22 - Math.sin(Math.PI * i / (n - 1)) * 30), t:rng('g') * 9, v:1});
 }
 function gemRow() {
-  const r = rng(), x0 = W + 40, big = rng() < .12;
+  const r = rng('g'), x0 = W + 40, big = rng('g') < .12;
   if (r < .4) for (let i = 0; i < 6; i++) gems.push({x:x0 + i * 34, y:GROUND - 24, t:i, v:1});
   else if (r < .7) for (let i = 0; i < 5; i++) gems.push({x:x0 + i * 34, y:GROUND - 96, t:i, v:1});
   else for (let i = 0; i < 8; i++) gems.push({x:x0 + i * 32, y:GROUND - 66 - Math.sin(i * .8) * 34, t:i, v:1});
-  if (big) { const g = gems[gems.length - 1 - Math.floor(rng() * 4)]; g.v = 5; }
+  if (big) { const g = gems[gems.length - 1 - Math.floor(rng('g') * 4)]; g.v = 5; }
 }
 
 // A diamond may never sit inside an obstacle. Ground obstacles lift it onto an arc above their top (only if the
@@ -1287,10 +1309,10 @@ let patSpan = 0, lastPat = '', patternsOn = true, forcePat = '', patChance = .38
 function spawnPattern() {
   const solid = level.ground_.filter(k => !(k in ENEMY_VX)), kinds = solid.length ? solid : level.ground_;
   const J = speed * 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);          // horizontal distance of one full jump
-  const pick = () => kinds[Math.floor(rng() * kinds.length)];
-  const put = (k, x) => { const [w, h] = SIZES[k]; obstacles.push({kind:k, x, y:GROUND, w, h, t:rng() * 6, vx:ENEMY_VX[k] || 0}); return w; };
+  const pick = () => kinds[Math.floor(rng('s') * kinds.length)];
+  const put = (k, x) => { const [w, h] = SIZES[k]; obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:ENEMY_VX[k] || 0}); return w; };
   const names = ['pair', 'rhythm', 'stairs'].concat(level.air === 'ufo' ? [] : ['gauntlet']).filter(n => n !== lastPat);
-  const name = forcePat || names[Math.floor(rng() * names.length)]; lastPat = name;
+  const name = forcePat || names[Math.floor(rng('s') * names.length)]; lastPat = name;
   const x0 = W + 60; let x = x0, end = x0;
   const fits = w => w <= .5 * J;                              // everything cleared by one jump must fit in half a jump, so there is room to mistime it
   if (name === 'pair') {                                      // two obstacles close enough to clear in one jump
@@ -1305,42 +1327,42 @@ function spawnPattern() {
     x += put(lo, x) + 4; x += put(hi, x) + 4; end = x + put(lo, x);
   } else {                                                    // gauntlet: jump, slide under a low flyer, jump
     put(pick(), x); const ax = x + 1.35 * J;
-    obstacles.push({kind:'air', x:ax, y:GROUND - 34, base:level.wob ? GROUND - 34 : undefined, amp:level.wob || 0, w:46, h:26, t:rng() * 6});
+    obstacles.push({kind:'air', x:ax, y:GROUND - 34, base:level.wob ? GROUND - 34 : undefined, amp:level.wob || 0, w:46, h:26, t:rng('s') * 6});
     const gx = x + 2.4 * J; end = gx + put(pick(), gx);
   }
   patSpan = Math.max(0, end - x0);
   return true;
 }
 function spawn() {
-  const air = rng() < level.airP;
+  const air = rng('s') < level.airP;
   if (air && level.air === 'ufo') {
-    const r = rng();
+    const r = rng('s');
     if (r < .35) {            // meteor: falls from the sky and lands ahead of the runner
-      const lx = 170 + rng() * 140, f = (W + 30 - lx) / speed;
+      const lx = 170 + rng('s') * 140, f = (W + 30 - lx) / speed;
       obstacles.push({kind:'meteor', x:W + 30, y:-30, w:34, h:34, vy:(GROUND + 12) / f, t:0});
     } else if (r < .7) {      // high UFO: punishes big jumps, you must hop low or wait
-      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 100, base:GROUND - 100, w:56, h:30, t:rng() * 6});
+      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 100, base:GROUND - 100, w:56, h:30, t:rng('s') * 6});
     } else {                  // low UFO: slide under
-      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 34, base:GROUND - 34, w:56, h:26, t:rng() * 6});
+      obstacles.push({kind:'air', sub:'ufo', hp:2, x:W + 60, y:GROUND - 34, base:GROUND - 34, w:56, h:26, t:rng('s') * 6});
     }
   } else if (air) {
-    const by = level.hiAir && rng() < .4 ? GROUND - 98 : GROUND - 34;
-    obstacles.push({kind:'air', x:W + 60, y:by, base:level.wob ? by : undefined, amp:level.wob || 0, w:46, h:26, t:rng() * 6});
-  } else if (patternsOn && rng() < patChance && spawnPattern()) {
+    const by = level.hiAir && rng('s') < .4 ? GROUND - 98 : GROUND - 34;
+    obstacles.push({kind:'air', x:W + 60, y:by, base:level.wob ? by : undefined, amp:level.wob || 0, w:46, h:26, t:rng('s') * 6});
+  } else if (patternsOn && rng('s') < patChance && spawnPattern()) {
     // a hand-built pattern was placed
   } else {
-    const kinds = level.ground_, cluster = rng() < .2 ? 2 : 1;
+    const kinds = level.ground_, cluster = rng('s') < .2 ? 2 : 1;
     let x = W + 60;
     for (let i = 0; i < cluster; i++) {
-      const k = kinds[Math.floor(rng() * kinds.length)], [w, h] = SIZES[k];
-      obstacles.push({kind:k, x, y:GROUND, w, h, t:rng() * 6, vx:ENEMY_VX[k] || 0});
+      const k = kinds[Math.floor(rng('s') * kinds.length)], [w, h] = SIZES[k];
+      obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:ENEMY_VX[k] || 0});
       x += w + 2;
     }
-    if (rng() < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
+    if (rng('s') < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
   }
   const airtime = 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);
   const gx = level.gapX || [14, 48];
-  spawnLeft = speed * (airtime + gx[0] + rng() * (gx[1] - gx[0])) + patSpan; patSpan = 0;
+  spawnLeft = speed * (airtime + gx[0] + rng('s') * (gx[1] - gx[0])) + patSpan; patSpan = 0;
 }
 
 function hit(o) {
@@ -1389,7 +1411,11 @@ function die() {
   beep(220, .5, 'sawtooth', .08, -180);
   dust(player.x, player.y - 30, 24, 'rgba(255,200,120,.9)');
   if (score > best) { best = score; try { localStorage.setItem('wheelrunner.best', best); } catch (e) {} }
-  setTimeout(() => showOverlay('CRASHED!', 'No retries left.  Score ' + score + '  ·  Best ' + best + '  ·  Levels ' + levelsDone + '  ·  💎 +' + runGems, 'SPIN AGAIN'), 900);
+  setTimeout(() => {
+    showOverlay('CRASHED!', 'No retries left.  Score ' + score + '  ·  Best ' + best + '  ·  Levels ' + levelsDone + '  ·  💎 +' + runGems, 'SPIN AGAIN');
+    if (dailyRun) { const db = save.dailyBest && save.dailyBest.day === dayKey() ? save.dailyBest.score : 0; save.dailyBest = {day:dayKey(), score:Math.max(db, score)}; persist(); $text.textContent += '  ·  Daily best ' + save.dailyBest.score; }
+    $share.style.display = 'inline-block';
+  }, 900);
 }
 
 // ---------------------------------------------------------------- update
@@ -1449,7 +1475,7 @@ function update(dt) {
   gemLeft -= speed * dt;
   if (gemLeft <= 0 && boss) gemLeft = 200;
   if (gemLeft <= 0) { if (obstacles.some(o => o.x > W - 160)) gemLeft = 90; else { gemRow(); gemLeft = speed * (70 + Math.random() * 90); } }
-  pkLeft -= dt; if (pkLeft <= 0 && !boss) { if (obstacles.some(o => o.x > W - 160)) pkLeft = 60; else { spawnPickup(); pkLeft = 700 + rng() * 500; } }
+  pkLeft -= dt; if (pkLeft <= 0 && !boss) { if (obstacles.some(o => o.x > W - 160)) pkLeft = 60; else { spawnPickup(); pkLeft = 700 + rng('p') * 500; } }
   const gph = p.sliding && p.onGround ? 30 : 62;
   for (const g of gems) {
     g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
@@ -2270,6 +2296,7 @@ function render() {
     hudTxt('COMBO ' + combo + '  ×' + cm().toFixed(1), W - 18, 134, 16, 'right');
     ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(W - 118, 154, 100, 5); ctx.fillStyle = '#ffd23f'; ctx.fillRect(W - 118, 154, 100 * Math.max(0, comboT) / 180, 5);
   }
+  if (dailyRun && state !== 'title') hudTxt('📅 DAILY ' + dayKey(), W - 18, 166, 12, 'right');
   if (state !== 'title') hudTxt('❤ ' + retries + '/' + MAX_RETRIES + ' retries', W - 18, 118, 14, 'right');
   for (let i = 0; i < maxAmmo(); i++) {
     const px = 18 + i * 22; ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(px, 62, 18, 9);
@@ -2354,9 +2381,10 @@ function frame(now) {
 }
 
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
+if (/[?&]daily=1/.test(location.search)) $text.textContent = 'A friend shared today\'s daily challenge. Tap DAILY 📅: everyone gets the same levels and obstacles.';
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get missions(){return save.missions}, get missionDay(){return save.day}, mEvt:(k, n) => missionEvt(k, n), setDay:d => { save.day = d; }, ensureMissions, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get dailyRun(){return dailyRun}, get obsSnapshot(){return obstacles.map(o => [o.kind, Math.round(o.x)])}, get missions(){return save.missions}, get missionDay(){return save.day}, mEvt:(k, n) => missionEvt(k, n), setDay:d => { save.day = d; }, ensureMissions, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get dark(){return dark}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
