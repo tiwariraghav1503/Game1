@@ -52,6 +52,13 @@
   .card button:disabled{background:#303652;color:#8a93b5;cursor:default}
   .card.owned button{background:#2f7d4b;color:#d8ffe6}
   #keys{font-size:3.2cqh;opacity:.6}
+  #heropick{display:flex;align-items:center;gap:1.4cqw;background:rgba(255,255,255,.1);border-radius:2cqh;padding:1cqh 1.6cqw}
+  #heropick .arr{font:inherit;font-weight:800;font-size:4.4cqh;width:6cqh;height:6cqh;border:0;border-radius:50%;background:#ffd23f;color:#2b1700;cursor:pointer}
+  #heropick .arr:disabled{background:#303652;color:#8a93b5;cursor:default}
+  #hport{width:8cqh;height:11cqh}
+  #hname{display:flex;flex-direction:column;min-width:13cqw}
+  #hname b{font-size:3.6cqh}
+  #hname small{font-size:2.3cqh;opacity:.75;line-height:1.2}
 </style>
 </head>
 <body>
@@ -68,8 +75,9 @@
         <h1 id="ptitle">WHEEL RUNNER</h1>
         <p id="ptext"></p>
         <p id="result"></p>
+        <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button></div>
-        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
+        <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
     </div>
     <div id="shop" class="hidden">
@@ -289,6 +297,7 @@ function showOverlay(title, text, btn) {
   $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false;
   $result.textContent = ''; wheelWin = -1;
   overlay.classList.remove('hidden');
+  renderPicker();
 }
 
 // ---------------------------------------------------------------- input
@@ -431,6 +440,34 @@ refreshButtons();
 $btn.addEventListener('click', primary);
 wcv.addEventListener('click', primary);
 
+// Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
+const $hp = document.getElementById('heropick');
+const ownedHeroes = () => HEROES.filter(h => h.cost === 0 || has('hero_' + h.id));
+function renderPicker() {
+  const can = state === 'title' || state === 'over';          // heroes are locked in for the rest of a run
+  $hp.style.display = can ? 'flex' : 'none';
+  if (!can) return;
+  const h = CH(), n = ownedHeroes().length, c = document.getElementById('hport'), main = ctx;
+  c.getContext('2d').clearRect(0, 0, 80, 110); ctx = c.getContext('2d');
+  drawPlayer({x:36, y:100, vy:0, onGround:true, sliding:false, phase:.7, dead:false, face:1, portrait:true, ch:h, atk:null, inv:0, dashT:0, flash:0});
+  ctx = main;
+  $hp.querySelector('b').textContent = h.name;
+  $hp.querySelector('small').textContent = n > 1 ? h.desc : 'Unlock more heroes in the shop.';
+  document.getElementById('hprev').disabled = document.getElementById('hnext').disabled = n < 2;
+}
+function cycleHero(d) {
+  if ((state !== 'title' && state !== 'over') || overlay.classList.contains('hidden') || !$shop.classList.contains('hidden')) return;
+  const list = ownedHeroes(); if (list.length < 2) return;
+  const i = list.findIndex(h => h.id === save.hero);
+  save.hero = list[(i + d + list.length) % list.length].id; persist(); beep(880, .06, 'triangle', .05); renderPicker();
+}
+document.getElementById('hprev').addEventListener('click', () => cycleHero(-1));
+document.getElementById('hnext').addEventListener('click', () => cycleHero(1));
+addEventListener('keydown', e => {
+  if (e.code === 'BracketLeft' || e.code === 'ArrowLeft') cycleHero(-1);
+  else if (e.code === 'BracketRight' || e.code === 'ArrowRight' || e.code === 'KeyH') cycleHero(1);
+});
+
 // ---------------------------------------------------------------- shop
 const $items = document.getElementById('items'), $msg = document.getElementById('shopmsg');
 function renderShop() {
@@ -462,7 +499,7 @@ function renderShop() {
 }
 document.querySelector('#shophead').addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.tab; if (t) { shopTab = t; $msg.textContent = ''; renderShop(); } });
 function openShop() { if ($shopBtn.disabled) return; renderShop(); $shop.classList.remove('hidden'); }
-function closeShop() { $shop.classList.add('hidden'); }
+function closeShop() { $shop.classList.add('hidden'); renderPicker(); }
 $shopBtn.addEventListener('click', openShop);
 document.getElementById('shopclose').addEventListener('click', closeShop);
 addEventListener('keydown', e => { if (e.code === 'Escape') closeShop(); });
