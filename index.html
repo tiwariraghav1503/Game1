@@ -157,7 +157,7 @@ const HEROES = [
   {id:'ninja',     name:'Ninja',     cost:150, desc:'Jumps 12% higher. Melee swings 25% faster.', skin:'#e8b890', shirt:'#23232e', pants:'#2e2e3c', shoe:'#111',    hair:'#111', jump:1.12, melee:.75},
   {id:'cowboy',    name:'Cowboy',    cost:150, desc:'Carries 9 shots and reloads 35% faster.', skin:'#e8b48c', shirt:'#3b78c4', pants:'#6b4a2a', shoe:'#4a2e14', hair:'#7a4a1a', ammo:3, regen:1.35},
   {id:'knight',    name:'Knight',    cost:250, desc:'Starts each run with +1 armor. Heavy: lower jump, slower walk.', skin:'#f0c8a0', shirt:'#aab6cf', pants:'#6b7690', shoe:'#555e75', hair:'#5b3a1a', armor:1, jump:.94, walk:.85},
-  {id:'astronaut', name:'Astronaut', cost:250, desc:'Low gravity: long, floaty jumps.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
+  {id:'astronaut', name:'Astronaut', cost:250, desc:'Floaty jumps. Pinch the screen (or press G) to fly for 10 seconds.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
   {id:'hunter',    name:'Treasure Hunter', cost:300, desc:'Built-in magnet and 25% more diamonds.', skin:'#d9a272', shirt:'#3b9a6a', pants:'#8a6a3a', shoe:'#4a3320', hair:'#2a1a10', gem:1.25, magnet:true},
 ].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
 let save = {gems:0, owned:{}, hero:'runner'};
@@ -199,7 +199,7 @@ const keys = {down:false, jump:false, left:false, right:false};
 let touchDown = false, touchJump = false, touchL = false, touchR = false;
 
 function resetGame() {
-  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false};
+  player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
@@ -292,8 +292,31 @@ function showOverlay(title, text, btn) {
 }
 
 // ---------------------------------------------------------------- input
+// Astronaut jetpack: pinch the screen (two fingers), Ctrl+scroll / trackpad pinch, or press G to fly for 10 seconds.
+const FLY_TIME = 600, FLY_CD = 1200, FLY_TOP = GROUND - 130;      // frames at 60fps: 10s of flight, 20s recharge
+function startFly() {
+  const p = player;
+  if (state !== 'play' || p.dead || save.hero !== 'astronaut' || p.flyT > 0 || p.flyCD > 0) return;
+  p.flyT = FLY_TIME; p.onGround = false; p.sliding = false; p.vy = -6;
+  beep(300, .4, 'sawtooth', .05, 500); dust(p.x - 12, p.y, 10, 'rgba(255,200,120,.9)');
+}
+const pinchPts = new Map(); let pinchD0 = 0, pinchDone = false;
+const pinchDist = () => { const [a, b] = [...pinchPts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+cv.addEventListener('pointerdown', e => {
+  pinchPts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pinchPts.size === 2) { pinchD0 = pinchDist(); pinchDone = false; }
+});
+addEventListener('pointermove', e => {
+  if (!pinchPts.has(e.pointerId)) return;
+  pinchPts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pinchPts.size === 2 && !pinchDone && Math.abs(pinchDist() - pinchD0) > 30) { pinchDone = true; startFly(); }
+});
+const dropPinch = e => { pinchPts.delete(e.pointerId); if (pinchPts.size < 2) pinchDone = false; };
+addEventListener('pointerup', dropPinch); addEventListener('pointercancel', dropPinch);
+addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); startFly(); } }, {passive:false});
+
 function jump() {
-  if (state !== 'play' || player.dead) return;
+  if (state !== 'play' || player.dead || player.flyT > 0) return;
   if (player.onGround) {
     player.vy = level.jv * CH().jump; player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
@@ -378,6 +401,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') dash();
   else if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') attack();
   else if (e.code === 'KeyQ') nextWeapon();
+  else if (e.code === 'KeyG') startFly();
   else if (/^Digit[0-9]$/.test(e.code)) setWeapon(e.code === 'Digit0' ? 9 : +e.code.slice(5) - 1);
   else if (e.code === 'Minus') setWeapon(10);
   else if (e.code === 'Enter') primary();
@@ -391,6 +415,7 @@ addEventListener('keyup', e => {
 });
 cv.addEventListener('pointerdown', e => {
   if (state !== 'play') { primary(); return; }
+  if (pinchPts.size > 1 && save.hero === 'astronaut') return;      // second finger of a pinch
   const r = cv.getBoundingClientRect();
   if ((e.clientY - r.top) / r.height > .6) touchDown = true; else { touchJump = true; jump(); }
 });
@@ -900,7 +925,18 @@ function update(dt) {
   }
   p.phase += (boss ? Math.abs(mv) * 6 : speed) * dt * .045;
   if (wantsSlide() && p.onGround) p.sliding = true; else if (!wantsSlide()) p.sliding = false;
-  if (!p.onGround) {
+  if (p.flyCD > 0) p.flyCD -= dt;
+  if (p.flyT > 0) {                                     // jetpack: hold jump to rise, slide/down to sink, otherwise hover
+    p.flyT -= dt; p.sliding = false;
+    const up = keys.jump || touchJump, dn = keys.down || touchDown;
+    const tv = up ? -5.5 : dn ? 5.5 : Math.sin(clock * .08) * .5;
+    p.vy += (tv - p.vy) * .16 * dt;
+    p.y = Math.max(FLY_TOP, Math.min(GROUND, p.y + p.vy * dt));
+    if (p.y <= FLY_TOP && p.vy < 0) p.vy = 0;
+    p.onGround = p.y >= GROUND; p.dj = false;
+    if (Math.random() < .8) dust(p.x - 16 * p.face, p.y - 26, 1, Math.random() < .5 ? 'rgba(255,190,90,.95)' : 'rgba(255,255,255,.7)');
+    if (p.flyT <= 0) { p.flyT = 0; p.flyCD = FLY_CD; beep(220, .25, 'triangle', .05, -120); }
+  } else if (!p.onGround) {
     p.vy += level.g * CH().grav * (wantsSlide() ? 2.4 : 1) * dt;
     if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
     p.y += p.vy * dt;
@@ -1272,6 +1308,11 @@ function drawPlayer(p) {
   if (p.face < 0) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
   if (p.dashT > 0) { ctx.globalAlpha = .25; ctx.fillStyle = '#c58bff'; for (let k = 1; k <= 3; k++) ctx.fillRect(x - 14 - k * 18, y - 60, 12, 56); ctx.globalAlpha = .55; }
   else if (p.inv > 0 && Math.floor(clock / 4) % 2) ctx.globalAlpha = .4;
+  if (p.flyT > 0 && !pt) {                                 // jetpack flame, flickers faster in the last 2 seconds
+    const fl = 10 + Math.random() * 12, warn = p.flyT < 120 && Math.floor(clock / 4) % 2;
+    ctx.fillStyle = warn ? '#ff4d4d' : '#ffb347'; ctx.beginPath(); ctx.moveTo(x - 24, y - 28); ctx.lineTo(x - 14, y - 28); ctx.lineTo(x - 19, y - 28 + fl + 8); ctx.fill();
+    ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.moveTo(x - 21, y - 28); ctx.lineTo(x - 17, y - 28); ctx.lineTo(x - 19, y - 28 + fl); ctx.fill();
+  }
   if (!pt) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 22 * (1 - Math.min(.5, (GROUND - y) / 300)), 5, 0, 0, 7); ctx.fill(); }
   if (p.dead) { ctx.translate(x, y - 20); ctx.rotate(-1.3); ctx.translate(-x, -(y - 20)); }
   const helm = !pt && has('helmet') && armor > 0, vest = !pt && has('vest') && armor > 0;
@@ -1613,6 +1654,12 @@ function render() {
     const perks = [['slimecannon', '🦘'], ['railgun', '🚀'], ['titanfist', '🚜'], ['reapersaw', '⚡']].filter(k => has(k[0]));
     ctx.font = '16px system-ui,"Apple Color Emoji","Segoe UI Emoji"'; perks.forEach((k, i) => ctx.fillText(k[1], 18 + i * 24, 126));
   }
+  if (save.hero === 'astronaut' && state === 'play') {
+    const fy = anyOP() ? 138 : 114, ready = !player.flyT && !player.flyCD;
+    const f = player.flyT > 0 ? player.flyT / FLY_TIME : 1 - player.flyCD / FLY_CD;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, fy, 150, 10); ctx.fillStyle = player.flyT > 0 ? '#ffb347' : ready ? '#6dffb0' : '#7a8aa8'; ctx.fillRect(18, fy, 150 * f, 10);
+    hudTxt(player.flyT > 0 ? '🚀 ' + Math.ceil(player.flyT / 60) + 's' : ready ? '🚀 PINCH / G TO FLY' : '🚀 ' + Math.ceil(player.flyCD / 60) + 's', 174, fy - 3, 13);
+  }
   if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 410, 82, 18); ctx.globalAlpha = 1; }
   if (boss && !boss.dead) {
     for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 134, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
@@ -1643,7 +1690,7 @@ function frame(now) {
 showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to decide which level you face.', 'SPIN THE WHEEL');
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
