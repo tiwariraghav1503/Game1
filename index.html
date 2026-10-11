@@ -169,7 +169,7 @@
 const W = 900, H = 420, GROUND = 340;
 const cv = document.getElementById('game');
 let ctx = cv.getContext('2d');
-const mainCtx = ctx, BUILD = 'build 33';
+const mainCtx = ctx, BUILD = 'build 34';
 // Older browsers lack roundRect; the game draws with it everywhere, so provide a fallback.
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
@@ -816,9 +816,11 @@ addEventListener('keyup', e => {
   if (e.code === 'KeyF' || e.code === 'KeyX' || e.code === 'KeyZ') keys.fire = false;
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { keys.jump = false; if (player.vy < -5) player.vy *= .5; }   // short hop
 });
+let lastTap = null;
 cv.addEventListener('pointerdown', e => {
-  if (state !== 'play') { primary(); return; }
+  if (state !== 'play') { lastTap = null; primary(); return; }
   if (pinchPts.size > 1 && save.hero === 'astronaut') return;      // second finger of a pinch
+  const nowT = performance.now(); if (lastTap && nowT - lastTap.t < 300 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 60) { player.inv = Math.max(player.inv, 1800); lastTap = null; } else lastTap = {t:nowT, x:e.clientX, y:e.clientY};
   const r = cv.getBoundingClientRect();
   if ((e.clientY - r.top) / r.height > .6) touchDown = true; else { touchJump = true; jump(); }
 });
