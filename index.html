@@ -163,7 +163,7 @@
 const W = 900, H = 420, GROUND = 340;
 const cv = document.getElementById('game');
 let ctx = cv.getContext('2d');
-const mainCtx = ctx, BUILD = 'build 29';
+const mainCtx = ctx, BUILD = 'build 30';
 // Older browsers lack roundRect; the game draws with it everywhere, so provide a fallback.
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
@@ -359,6 +359,11 @@ const HEROES = [
   {id:'knight',    name:'Knight',    cost:250, desc:'+1 armor each run. Heavy: low jump, slow walk.', skin:'#f0c8a0', shirt:'#aab6cf', pants:'#6b7690', shoe:'#555e75', hair:'#5b3a1a', armor:1, jump:.94, walk:.85},
   {id:'astronaut', name:'Astronaut', cost:250, desc:'Floaty jumps. Pinch or G to fly 10s.', skin:'#f2c29b', shirt:'#f1f3f8', pants:'#dfe4ee', shoe:'#9aa6bd', hair:'#3b2314', grav:.75, jump:.95},
   {id:'hunter',    name:'Treasure Hunter', cost:300, desc:'Built-in magnet and 25% more diamonds.', skin:'#d9a272', shirt:'#3b9a6a', pants:'#8a6a3a', shoe:'#4a3320', hair:'#2a1a10', gem:1.25, magnet:true},
+  // The four bosses as playable characters (drawn with their boss art, scaled down). Broader bodies get a slightly wider hitbox.
+  {id:'b_slime', boss:'slime', scale:.6,  hand:[36, 40], hbw:20, name:'Slime King',     cost:1500, desc:'Bouncy jelly: higher floaty jumps, +1 armor.',                    skin:'#7bdc6a', shirt:'#4fbf55', pants:'#2e8f3e', shoe:'#2e8f3e', hair:'#2e8f3e', jump:1.18, grav:.85, armor:1},
+  {id:'b_mecha', boss:'mecha', scale:.5,  hand:[30, 52], hbw:16, name:'Mecha-X',        cost:2200, desc:'Armored robot: 10 shots, fast reload, built-in magnet.',          skin:'#aab6cf', shirt:'#6b7690', pants:'#4a5470', shoe:'#39415a', hair:'#39415a', ammo:4, regen:1.6, magnet:true, walk:1.1},
+  {id:'b_sumo',  boss:'sumo',  scale:.55, hand:[34, 46], hbw:22, name:'Sumo Titan',     cost:3000, desc:'Heavyweight: +2 armor, fast melee, lower jump.',                  skin:'#e8a07a', shirt:'#e0b43a', pants:'#c0901f', shoe:'#8a5a2a', hair:'#16121a', armor:2, melee:.7, jump:.9, walk:.85},
+  {id:'b_saw',   boss:'saw',   scale:.5,  hand:[28, 50], hbw:15, name:'Chainsaw Fiend', cost:4000, desc:'The ultimate: +1 armor, +40% diamonds, fast melee and reload.',   skin:'#b88a6a', shirt:'#6b3a2a', pants:'#3a2a24', shoe:'#222', hair:'#16121a', armor:1, melee:.6, jump:1.1, gem:1.4, regen:1.3, ammo:2},
 ].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
 let save = {gems:0, owned:{}, hero:'runner'};
 try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner', missions:Array.isArray(j.missions) ? j.missions : undefined, day:j.day, dailyBest:j.dailyBest}; } catch (e) {}
@@ -1084,7 +1089,7 @@ const BOSSES = [
   {id:'saw',   name:'CHAINSAW FIEND', hp:50, w:100, h:150, drop:'reapersaw'},
 ];
 function go(b, st, time) { b.st = st; b.timer = time; b.dur = time; }
-function pbox() { const p = player, sl = p.sliding && p.onGround, pw = p.mechT > 0 ? 30 : sl ? 24 : 14, ph = p.mechT > 0 ? 96 : sl ? 30 : 62; return {x0:p.x - pw, x1:p.x + pw, y0:p.y - ph + 6, y1:p.y - 4}; }
+function pbox() { const p = player, sl = p.sliding && p.onGround, pw = p.mechT > 0 ? 30 : sl ? 24 : (CH().hbw || 14), ph = p.mechT > 0 ? 96 : sl ? 30 : 62; return {x0:p.x - pw, x1:p.x + pw, y0:p.y - ph + 6, y1:p.y - 4}; }
 function hitsPlayer(x0, y0, x1, y1) { const q = pbox(); return q.x0 < x1 && q.x1 > x0 && q.y0 < y1 && q.y1 > y0; }
 function damagePlayer() {
   const p = player;
@@ -1482,7 +1487,7 @@ function spawn() {
 
 function hit(o) {
   const slide = player.sliding && player.onGround;
-  const pw = player.mechT > 0 ? 30 : slide ? 24 : 14, ph = player.mechT > 0 ? 96 : slide ? 30 : 62;
+  const pw = player.mechT > 0 ? 30 : slide ? 24 : (CH().hbw || 14), ph = player.mechT > 0 ? 96 : slide ? 30 : 62;
   const px0 = player.x - pw, px1 = player.x + pw, py1 = player.y - 4, py0 = player.y - ph + 6;
   const ox0 = o.x + 5, ox1 = o.x + o.w - 5;
   const oy1 = (o.kind === 'air' ? o.y : o.y) - 3, oy0 = oy1 - o.h + 6;
@@ -2130,7 +2135,8 @@ function drawPlayer(p) {
       if (i === n) for (let k = 0; k < 8; k++) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(k * .785) * 11, cy + Math.sin(k * .785) * 11); ctx.stroke(); }
     }
   };
-  if (sl) {                                              // feet-first slide
+  if (ch.boss) { drawBossHero(p, ch, x, y, pt); held(x + ch.hand[0], y - ch.hand[1]); }
+  else if (sl) {                                         // feet-first slide
     limb(x + 4, y - 12, x + 32, y - 6, pants, 7); limb(x + 32, y - 6, x + 38, y - 6, shoe, 6);
     limb(x - 14, y - 22, x + 6, y - 12, vest ? '#9aa6bd' : shirt, 11);
     limb(x - 10, y - 20, x - 26, y - 10, skin, 5); limb(x - 4, y - 18, x + 12, y - 16, skin, 5); held(x + 12, y - 16);
@@ -2185,6 +2191,14 @@ function drawEps() {
     ctx.restore();
   }
 }
+// A boss used as the player's body: boss art (which faces left) mirrored to face right and scaled down to player size.
+function drawBossHero(p, ch, x, y, pt) {
+  const d = BOSSES.find(b => b.id === ch.boss), sl = p.sliding && p.onGround && !p.dead;
+  const bob = !pt && p.onGround && !p.dead && !sl ? Math.abs(Math.sin(p.phase * 2)) * 3 : 0;
+  ctx.save(); ctx.translate(x, y - bob); ctx.scale(-ch.scale, ch.scale * (sl ? .55 : 1)); ctx.translate(-x, -GROUND);
+  drawBoss({d, x, y:GROUND, t:clock * .6, hp:1, max:1, st:'idle', timer:0, dur:1, flash:0, dead:false, dieT:0, tx:0, sp:0, shots:0, beams:0, charges:0, x0:0, tier:0, hitBy:0, noShadow:true});
+  ctx.restore();
+}
 function drawBoss(b) {
   const w = b.d.w, h = b.d.h, x = b.x, y = b.y, id = b.d.id, T = b.t;
   const dmg = b.max ? 1 - Math.max(0, b.hp) / b.max : 0, rage = dmg > .5;          // dmg 0..1; rage = past half health
@@ -2192,7 +2206,7 @@ function drawBoss(b) {
   const R = (rx, ry, rw, rh, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, r); ctx.fill(); };
   const L = (x0, y0, x1, y1, lw, c) => { ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
   // ground shadow
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, w * .5 * (1 - Math.min(.6, (GROUND - y) / 260)), 8, 0, 0, 7); ctx.fill();
+  if (!b.noShadow) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, GROUND + 3, w * .5 * (1 - Math.min(.6, (GROUND - y) / 260)), 8, 0, 0, 7); ctx.fill(); }
   if (id === 'slime' && (b.st === 'squat' || b.st === 'hop')) {     // landing marker: get out of the way
     ctx.fillStyle = 'rgba(255,60,60,' + (.25 + .2 * Math.sin(b.t * .5)) + ')'; ctx.beginPath(); ctx.ellipse(b.tx, GROUND + 3, w / 2, 9, 0, 0, 7); ctx.fill();
   }

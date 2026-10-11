@@ -31,7 +31,7 @@ Spin the wheel to pick a level, then run, jump and shoot. Collect 💎 diamonds,
 - 12 wheel levels, each with its own music, plus wheel modifiers (double gems, low gravity, turbo, free tank, boss rush)
 - Checkpoints inside each level, with retries
 - Combos, near-miss bonuses and power-up orbs
-- 7 weapons, armor, 6 heroes, rocket shoes, a battle tank and a battle mech
+- 7 weapons, armor, 10 heroes (including the four bosses as playable characters, up to 4,000 gems), rocket shoes, a battle tank and a battle mech
 - Bosses with arena fights, minions and overpowered weapon drops. The shop's BOSSES tab lets you buy each boss weapon outright or fight any boss on purpose, at three difficulty tiers: from the title screen, between levels, or mid-level by pausing (P)
 - Daily missions and a daily challenge (same levels for everyone on a given date), with a share button
 - Progress is saved in your browser; there's a reset button on the title screen, and it can be undone once
