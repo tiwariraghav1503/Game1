@@ -27,7 +27,7 @@ Spin the wheel to pick a level, then run, jump and shoot. Collect 💎 diamonds,
 
 ## What's in it
 
-- 12 wheel levels, each with its own music, plus wheel modifiers (double gems, low gravity, lights out, boss rush and more)
+- 12 wheel levels, each with its own music, plus wheel modifiers (double gems, low gravity, turbo, free tank, boss rush)
 - Checkpoints inside each level, with retries
 - Combos, near-miss bonuses and power-up orbs
 - 7 weapons, armor, 6 heroes, rocket shoes, a battle tank and a battle mech
