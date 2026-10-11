@@ -169,7 +169,7 @@
 const W = 900, H = 420, GROUND = 340;
 const cv = document.getElementById('game');
 let ctx = cv.getContext('2d');
-const mainCtx = ctx, BUILD = 'build 32';
+const mainCtx = ctx, BUILD = 'build 33';
 // Older browsers lack roundRect; the game draws with it everywhere, so provide a fallback.
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
@@ -363,14 +363,21 @@ const SOFT = new Set(['crate', 'barrel', 'log', 'cactus', 'cane', 'coral']);   /
 let weapon = 0, atkId = 0, toast = 0;
 let bullets, ammo, ammoT, fireCD;
 const AMMO_REGEN = 55;
-const MAXLV = 5;
-const UPG_BASE = {gun:40, sword:60, stick:50, chain:70, slimecannon:120, railgun:120, titanfist:120, reapersaw:120, sniper:100, rpg:100, launcher:100};
-const UPG_TXT = {gun:'More damage, faster fire, bigger ammo bag, piercing at Lv4', sword:'More damage, longer reach, faster swings', stick:'More damage, longer reach, faster swings', chain:'More damage, longer reach, faster swings',
+const MAXLV = 5, GEAR_MAX = 3;
+const maxLv = id => WEAPONS.some(w => w.id === id) ? MAXLV : GEAR_MAX;
+const UPG_BASE = {helmet:60, vest:100, boots:70, magnet:80, rocketshoes:150, tank:200, mech:300, gun:40, sword:60, stick:50, chain:70, slimecannon:120, railgun:120, titanfist:120, reapersaw:120, sniper:100, rpg:100, launcher:100};
+const UPG_TXT = {helmet:'Absorbs +1 more crash per level', vest:'Absorbs +1 more crash per level', boots:'Absorbs +1 more crash per level', magnet:'Pulls diamonds from farther and faster', rocketshoes:'+25% rocket fuel per level',
+  tank:'+3s drive time and a faster recharge per level', mech:'+1 mech health, longer drive time, faster recharge',
+gun:'More damage, faster fire, bigger ammo bag, piercing at Lv4', sword:'More damage, longer reach, faster swings', stick:'More damage, longer reach, faster swings', chain:'More damage, longer reach, faster swings',
   slimecannon:'+25% damage and cheaper power cost per level', railgun:'+25% damage and cheaper power cost per level', titanfist:'+25% damage and cheaper power cost per level', reapersaw:'+25% damage and cheaper power cost per level',
   sniper:'More damage, faster reload, costs 1 less ammo at Lv4', rpg:'More damage, bigger blast, faster reload', launcher:'More damage, faster reload, extra missiles at Lv3 and Lv5'};
-const wk = id => Math.max(0, Math.min(MAXLV - 1, ((save.upg || {})[id] | 0)));        // upgrade steps bought: 0..4 (Lv = steps + 1)
-const upgCost = id => UPG_BASE[id] * (wk(id) + 1);
-const wcost = w => Math.max(10, Math.round(w.cost * (1 - .08 * wk(w.id))));
+const SIG = {b_slime:'slimecannon', b_mecha:'railgun', b_sumo:'titanfist', b_saw:'reapersaw'};   // a boss hero fights with its own boss's signature weapon
+const sig = () => SIG[save.hero];
+const wkRaw = id => Math.max(0, Math.min(maxLv(id) - 1, ((save.upg || {})[id] | 0)));
+const wk = id => Math.min(maxLv(id) - 1, wkRaw(id) + (id === sig() ? 2 : 0));        // upgrade steps: 0..max-1 (Lv = steps + 1); the signature weapon starts at Lv3
+const upgBase = id => UPG_BASE[id] || (id.startsWith('hero_') ? Math.max(60, Math.round(((HEROES.find(h => h.id === id.slice(5)) || {cost:0}).cost) * .2)) : 100);
+const upgCost = id => upgBase(id) * (wk(id) + 1);
+const wcost = w => Math.max(8, Math.round(w.cost * (1 - .08 * wk(w.id)) * (w.id === sig() ? .5 : 1)));
 const maxAmmo = () => 6 + CH().ammo + 2 * wk('gun');
 // ---------------------------------------------------------------- save + gear
 // playable heroes: each trades something for something. Unspecified stats default to 1 / 0.
@@ -390,12 +397,19 @@ const HEROES = [
 let save = {gems:0, owned:{}, hero:'runner'};
 try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner', missions:Array.isArray(j.missions) ? j.missions : undefined, day:j.day, dailyBest:j.dailyBest, diff:DIFFS[j.diff] ? j.diff : undefined, upg:j.upg && typeof j.upg === 'object' ? j.upg : {}}; } catch (e) {}
 if (!HEROES.some(h => h.id === save.hero && (h.cost === 0 || save.owned['hero_' + h.id]))) save.hero = 'runner';
-const CH = () => HEROES.find(h => h.id === save.hero) || HEROES[0];
+const chCache = {};
+const CH = () => {
+  const h = HEROES.find(x => x.id === save.hero) || HEROES[0], k = wk('hero_' + h.id);
+  if (!k) return h;
+  const key = h.id + k;
+  return chCache[key] || (chCache[key] = Object.assign({}, h, {melee:h.melee * (1 - .06 * k), ammo:h.ammo + k, regen:h.regen * (1 + .08 * k), armor:h.armor + (k >= 2 ? 1 : 0), gem:h.gem * (1 + .05 * k)}));
+};
 const persist = () => { try { localStorage.setItem('wheelrunner.save', JSON.stringify(save)); } catch (e) {} };
-const has = id => !!save.owned[id];
+const has = id => !!save.owned[id] || sig() === id;
+const bought = id => !!save.owned[id];
 const canTank = () => has('tank') || !!(player && player.freeTank);
 const ARMOR_VAL = {helmet:1, vest:2, boots:1};
-const armorMax = () => DF().noArmor ? 0 : Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), CH().armor) + (DF().armorBonus || 0);
+const armorMax = () => DF().noArmor ? 0 : Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] + wk(k) : 0), CH().armor) + (DF().armorBonus || 0);
 const ownsWeapon = w => w.id === 'gun' || has(w.id);   // the Blaster is the free starter weapon
 const anyOP = () => WEAPONS.some(w => w.op && has(w.id));
 const SHOP = [
@@ -481,9 +495,10 @@ let touchDown = false, touchJump = false, touchL = false, touchR = false, touchF
 
 function resetGame() {
   player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0, rfuel:100, airT:0, boost:false, bubble:false};
-  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
+  obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = sig() ? 100 : 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
   dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = DF().retries; cpTime = 0; cpPassed = 0; mod = null; gemMult = 1; slowT = 0; x2T = 0; magT = 0; boostT = 0; pkLeft = 480; combo = 0; comboT = 0; bestCombo = 0; gemC = 0; hitThisLevel = false; floaters = []; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
+  if (sig()) { const i = WEAPONS.findIndex(w => w.id === sig()); if (i >= 0) weapon = i; }
 }
 resetGame();
 
@@ -565,7 +580,7 @@ function spinWheel() {
 function startLevel() {
   overlay.classList.add('hidden');
   obstacles = []; bullets = []; ammo = maxAmmo(); levelTime = 0; cpTime = 0; cpPassed = 0; hitThisLevel = false; spawnLeft = 650; player.x = 130; player.face = 1; player.y = GROUND; player.vy = 0; player.onGround = true;
-  if (player.mechT > 0) { player.mechT = 0; player.mechCD = MECH_CD / 2; setBossUI(); }
+  if (player.mechT > 0) { player.mechT = 0; player.mechCD = mechCd() / 2; setBossUI(); }
   state = 'play';
   musicPlay(level.name); jingle([67, 72, 76], .07, 'square', .05);
   gemMult = mod && mod.id === 'gems2' ? 2 : 1; player.freeTank = !!mod && mod.id === 'tank'; refreshButtons();
@@ -606,11 +621,11 @@ addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); startFly()
 
 // Battle tank (shop item): T / TANK button for 12 seconds of an invulnerable tank that crushes everything it rolls over
 // and fires giant rockets from the front launcher. Recharges for 30 seconds.
-const TANK_TIME = 720, TANK_CD = 1800;
+const TANK_BASE = 720, TANK_CD_BASE = 1800, tankTime = () => TANK_BASE + 180 * wk('tank'), tankCd = () => Math.round(TANK_CD_BASE * (1 - .15 * wk('tank')));
 function startTank() {
   const p = player;
   if (state !== 'play' || p.dead || !canTank() || p.tankT > 0 || p.tankCD > 0 || p.flyT > 0 || p.mechT > 0) return;
-  p.tankT = TANK_TIME; p.sliding = false; p.atk = null; shake = 8;
+  p.tankT = tankTime(); p.sliding = false; p.atk = null; shake = 8;
   beep(70, .6, 'sawtooth', .09, 60); dust(p.x, GROUND, 14, 'rgba(120,100,80,.8)');
 }
 function fireTank() {
@@ -623,18 +638,18 @@ function tankBox() { const p = player; return {x0:p.x - 54, x1:p.x + 58, y0:p.y 
 
 // Battle mech (shop item, 1000 gems): MECH button / V. A suit you really drive: walk left and right, jump, hold FIRE for twin gatling guns,
 // and land from a jump to stomp. Unlike the tank it is not invincible: it soaks 5 hits (smashing what hit it), then it is destroyed.
-const RFUEL = 100, RFLY_TOP = GROUND - 190;   // rocket shoes: frames of thrust per jump, highest point you can boost to
-const MECH_TIME = 1200, MECH_CD = 2400, MECH_HP = 5;
+const RFUEL = 100, rfMax = () => Math.round(RFUEL * (1 + .25 * (has('rocketshoes') ? wk('rocketshoes') : 0))), RFLY_TOP = GROUND - 190;   // rocket shoes: frames of thrust per jump, highest point you can boost to
+const MECH_TIME_BASE = 1200, MECH_CD_BASE = 2400, MECH_HP_BASE = 5, mechTime = () => MECH_TIME_BASE + 240 * wk('mech'), mechCd = () => Math.round(MECH_CD_BASE * (1 - .1 * wk('mech'))), mechHpMax = () => MECH_HP_BASE + wk('mech');
 const MECH_WEAPONS = [{name:'Machine gun', short:'🔫 GUN'}, {name:'Rail gun', short:'⚡ RAIL'}, {name:'Rocket launcher', short:'🚀 ROCKET'}];
 function startMech() {
   const p = player;
   if (state !== 'play' || p.dead || !has('mech') || p.mechT > 0 || p.mechCD > 0 || p.tankT > 0 || p.flyT > 0) return;
-  p.mechT = MECH_TIME; p.mechHP = MECH_HP; p.mechW = 0; p.sliding = false; p.atk = null; shake = 10; p.inv = Math.max(p.inv, 30);
+  p.mechT = mechTime(); p.mechHP = mechHpMax(); p.mechW = 0; p.sliding = false; p.atk = null; shake = 10; p.inv = Math.max(p.inv, 30);
   beep(90, .5, 'sawtooth', .1, 80); setTimeout(() => beep(180, .25, 'square', .06, 200), 160); dust(p.x, GROUND, 14, 'rgba(120,130,150,.8)'); setBossUI();
 }
 function endMech(destroyed) {
   const p = player;
-  p.mechT = 0; p.mechCD = MECH_CD; p.inv = Math.max(p.inv, 70);
+  p.mechT = 0; p.mechCD = mechCd(); p.inv = Math.max(p.inv, 70);
   if (destroyed) { shake = 16; flash = .6; dust(p.x, p.y - 50, 30, 'rgba(255,170,60,.95)'); beep(70, .6, 'sawtooth', .12, -30); toast = 120; toastMsg = 'Mech destroyed'; }
   else { toast = 90; toastMsg = 'Mech powered down'; beep(200, .3, 'triangle', .05, -100); }
   setBossUI();
@@ -693,7 +708,7 @@ function mechStomp() {
 function jump() {
   if (state !== 'play' || player.dead || player.flyT > 0 || player.tankT > 0) return;
   if (player.onGround) {
-    player.vy = level.jv * CH().jump * (player.mechT > 0 ? 1.08 : 1); player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60; player.rfuel = RFUEL; player.airT = 0;
+    player.vy = level.jv * CH().jump * (player.mechT > 0 ? 1.08 : 1); player.onGround = false; player.sliding = false; player.dj = false; player.fuel = 60; player.rfuel = rfMax(); player.airT = 0;
     beep(380, .12, 'square', .04, 260); dust(player.x, GROUND, 4);
   } else if (has('slimecannon') && !player.dj) {
     player.dj = true; player.vy = level.jv * CH().jump * .92;
@@ -1014,19 +1029,25 @@ function renderShop() {
     return;
   }
   if (shopTab === 'upgrades') {
-    const list = WEAPONS.filter(w => ownsWeapon(w));
-    $items.innerHTML = '<div class="grid">' + list.map(w => {
-      const k = wk(w.id), max = k >= MAXLV - 1, c = upgCost(w.id), ok = save.gems >= c;
-      return '<div class="card' + (max ? ' owned' : '') + '" title="' + esc(w.name + ': ' + UPG_TXT[w.id]) + '"><span class="ic">' + w.icon + '</span><span class="tp">Level ' + (k + 1) + ' / ' + MAXLV + '</span><b>' + w.name + '</b><div class="bar"><i style="width:' + Math.round(100 * (k + 1) / MAXLV) + '%"></i></div><small>' + UPG_TXT[w.id] +
-        '</small><button data-upg="' + w.id + '"' + (max || !ok ? ' disabled' : '') + '>' + (max ? 'MAX LEVEL' : 'UPGRADE 💎 ' + c) + '</button></div>';
-    }).join('') + '</div><p class="mnote">Own more weapons (shop and bosses) to upgrade them here. Upgrades are permanent and apply straight away.</p>';
+    const card = (id, icon, name, grp) => {
+      const k = wk(id), mx = maxLv(id), max = k >= mx - 1, c = upgCost(id), ok = save.gems >= c;
+      return '<div class="card' + (max ? ' owned' : '') + '" title="' + esc(name + ': ' + (UPG_TXT[id] || 'More ammo, faster reload and swings, +1 armor at Lv3')) + '"><span class="ic">' + icon + '</span><span class="tp">' + grp + ' · Lv ' + (k + 1) + '/' + mx + (id === sig() ? ' ★' : '') + '</span><b>' + esc(name) + '</b><div class="bar"><i style="width:' + Math.round(100 * (k + 1) / mx) + '%"></i></div><small>' + (UPG_TXT[id] || 'More ammo, faster reload and swings, +1 armor at Lv3') +
+        '</small><button data-upg="' + id + '"' + (max || !ok ? ' disabled' : '') + '>' + (max ? 'MAX LEVEL' : 'UPGRADE 💎 ' + c) + '</button></div>';
+    };
+    const sec = (t, arr) => arr.join('');
+    $items.innerHTML = '<div class="grid">' +
+      sec('Weapons', WEAPONS.filter(w => ownsWeapon(w)).map(w => card(w.id, w.icon, w.name, 'Weapon'))) +
+      sec('Armor', SHOP.filter(i => i.type === 'Armor' && has(i.id)).map(i => card(i.id, i.icon, i.name, 'Armor'))) +
+      sec('Vehicles and gear', SHOP.filter(i => (i.type === 'Vehicle' || i.type === 'Gear') && has(i.id)).map(i => card(i.id, i.icon, i.name, i.type))) +
+      sec('Heroes', HEROES.filter(h => h.cost === 0 || has('hero_' + h.id)).map(h => card('hero_' + h.id, h.boss ? '👑' : '🦸', h.name, 'Hero'))) +
+      '</div><p class="mnote">Buy an item in the shop to upgrade it here. Upgrades are permanent and apply straight away. Boss heroes (★) fight with their boss weapon at +2 levels.</p>';
     return;
   }
   if (shopTab === 'bosses') {
     $items.innerHTML = '<div class="tierbar">Boss tier ' + [0, 1, 2].map(t => '<button class="tier' + (t === bossTier ? ' on' : '') + '" data-tier="' + t + '">' + (t + 1) + '</button>').join('') +
       '<small>Higher tiers have more health. The first win drops the boss weapon free. ' + (state === 'title' || state === 'over' ? 'Fighting starts a fresh run.' : 'Fighting keeps your current run going.') + '</small></div><div class="grid bgrid">' +
       BOSSES.map((b, i) => {
-        const w = WEAPONS.find(x => x.id === b.drop), own = has(w.id), price = BOSS_PRICE[w.id], ok = save.gems >= price;
+        const w = WEAPONS.find(x => x.id === b.drop), own = bought(w.id), price = BOSS_PRICE[w.id], ok = save.gems >= price;
         return '<div class="card boss' + (own ? ' owned' : '') + '" title="' + esc(b.name + ' · ' + w.name + ': ' + w.perk + '. ' + w.desc) + '"><canvas class="port bport" data-boss="' + i + '" width="140" height="120"></canvas><div class="binfo"><b>' + b.name + '</b><small>' + w.icon + ' ' + w.name + ': ' + w.perk +
           '</small><div class="brow"><button class="fight" data-boss-fight="' + i + '">FIGHT ⚔️</button><button data-boss-buy="' + w.id + '"' + (own || !ok ? ' disabled' : '') + '>' + (own ? 'OWNED' : 'BUY 💎 ' + price) + '</button></div></div></div>';
       }).join('') + '</div>';
@@ -1045,7 +1066,7 @@ function renderShop() {
     return;
   }
   $items.innerHTML = '<div class="grid">' + SHOP.map(it => {
-    const owned = has(it.id), ok = save.gems >= it.cost;
+    const owned = bought(it.id), ok = save.gems >= it.cost;
     return '<div class="card' + (owned ? ' owned' : '') + '" title="' + esc(it.name + ': ' + it.desc) + '"><span class="ic">' + it.icon + '</span><span class="tp">' + it.type + '</span><b>' + it.name + '</b><small>' + it.desc +
       '</small><button data-id="' + it.id + '"' + (owned || !ok ? ' disabled' : '') + '>' + (owned ? 'OWNED' : 'BUY 💎 ' + it.cost) + '</button></div>';
   }).join('') + '</div>';
@@ -1075,16 +1096,18 @@ $items.addEventListener('click', e => {
   if (ds.tier !== undefined) { bossTier = +ds.tier; renderShop(); return; }
   if (ds.bossBuy) {
     const w = WEAPONS.find(x => x.id === ds.bossBuy), price = BOSS_PRICE[ds.bossBuy];
-    if (!w || has(w.id) || save.gems < price) return;
+    if (!w || bought(w.id) || save.gems < price) return;
     save.gems -= price; save.owned[w.id] = 1; persist(); refreshButtons();
     beep(660, .1, 'square', .06); setTimeout(() => beep(990, .15, 'square', .06), 90); $msg.textContent = w.name + ' unlocked! Perk: ' + w.perk + '. It needs POWER to fire: kill enemies and grab diamonds to charge it.';
     renderShop(); return;
   }
   if (ds.upg) {
     const w = WEAPONS.find(x => x.id === ds.upg);
-    if (!w || !ownsWeapon(w) || wk(w.id) >= MAXLV - 1 || save.gems < upgCost(w.id)) return;
-    save.gems -= upgCost(w.id); save.upg = save.upg || {}; save.upg[w.id] = wk(w.id) + 1; persist();
-    beep(660, .08, 'square', .05); setTimeout(() => beep(1100, .12, 'square', .05), 80); $msg.textContent = w.name + ' is now level ' + (wk(w.id) + 1) + '.';
+    const id = ds.upg, nm = w ? w.name : id.startsWith('hero_') ? (HEROES.find(h => h.id === id.slice(5)) || {}).name : (SHOP.find(i => i.id === id) || {}).name;
+    const okOwn = w ? ownsWeapon(w) : id.startsWith('hero_') ? (id === 'hero_runner' || has(id)) : has(id) && SHOP.some(i => i.id === id);
+    if (!nm || !okOwn || wk(id) >= maxLv(id) - 1 || save.gems < upgCost(id)) return;
+    save.gems -= upgCost(id); save.upg = save.upg || {}; save.upg[id] = wkRaw(id) + 1; persist();
+    beep(660, .08, 'square', .05); setTimeout(() => beep(1100, .12, 'square', .05), 80); $msg.textContent = nm + ' is now level ' + (wk(id) + 1) + '.';
     renderShop(); return;
   }
   if (ds.bossFight !== undefined) { startBossFight(+ds.bossFight, bossTier); return; }
@@ -1634,7 +1657,7 @@ function update(dt) {
     }
     if (has('railgun') && (keys.jump || touchJump) && p.vy > 1.2 && p.fuel > 0) { p.vy = 1.2; p.fuel -= dt; if (Math.random() < .6) dust(p.x - 4, p.y, 1, 'rgba(120,220,255,.9)'); }
     p.y += p.vy * dt;
-    if (p.y >= GROUND) { p.y = GROUND; if (p.mechT > 0 && p.vy > 7) mechStomp(); p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; p.rfuel = RFUEL; p.airT = 0; p.boost = false; dust(p.x, GROUND, 5); beep(110, .07, 'sine', .06, -50); }
+    if (p.y >= GROUND) { p.y = GROUND; if (p.mechT > 0 && p.vy > 7) mechStomp(); p.vy = 0; p.onGround = true; p.dj = false; p.fuel = 60; p.rfuel = rfMax(); p.airT = 0; p.boost = false; dust(p.x, GROUND, 5); beep(110, .07, 'sine', .06, -50); }
   } else if ((!boss || mv) && Math.random() < .25 * dt) dust(p.x - 10 * p.face, GROUND, 1, level.snow ? '#fff' : 'rgba(120,100,80,.5)');
 
   if (!boss) { spawnLeft -= speed * dt; if (spawnLeft <= 0) spawn(); }
@@ -1643,7 +1666,7 @@ function update(dt) {
   if (p.inv > 0) p.inv -= dt;
   if (p.dashCD > 0) p.dashCD -= dt;
   if (p.dashT > 0) p.dashT -= dt;
-  pow = Math.min(100, pow + .09 * dt);
+  pow = Math.min(100, pow + (sig() ? .22 : .09) * dt);
   gemLeft -= speed * dt;
   if (gemLeft <= 0 && boss) gemLeft = 200;
   if (gemLeft <= 0) { if (obstacles.some(o => o.x > W - 160)) gemLeft = 90; else { gemRow(); gemLeft = speed * (70 + Math.random() * 90); } }
@@ -1652,7 +1675,7 @@ function update(dt) {
   for (const g of gems) {
     g.x -= (boss ? 0 : speed) * dt; g.t += dt; if (g.ttl !== undefined) g.ttl -= dt;
     keepGemClear(g);
-    if (has('magnet') || CH().magnet || magT > 0) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
+    if (has('magnet') || CH().magnet || magT > 0) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; const mk = has('magnet') ? wk('magnet') : 0; if (d < 170 + 50 * mk) { g.x += dx / d * (9 + 2 * mk) * dt; g.y += dy / d * (9 + 2 * mk) * dt; } }
     if (g.pk && !g.got && Math.abs(g.x - p.x) < 34 && g.y > p.y - gph - 14 && g.y < p.y + 10) { g.got = true; activatePickup(g.pk); continue; }
     if (!g.pk && !g.got && Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
       g.got = true; const gain = Math.floor(g.v * CH().gem * gemMult * (x2T > 0 ? 2 : 1) * DF().gems + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist(); evt('gems', gain); gemC++; if (combo > 0) comboT = Math.max(comboT, 120); if (gemC >= 3) { gemC = 0; bump(1); }
@@ -1749,7 +1772,7 @@ function update(dt) {
       if (!boss.dead && p.ram <= 0) { const bb = bossBox(boss); if (bb[2] > tb.x0 && bb[0] < tb.x1 && bb[3] > tb.y0 && bb[1] < tb.y1) { p.ram = 60; damageBoss(1); shake = 8; } }
     }
     if (Math.random() < .5) dust(p.x - 50 * p.face, GROUND, 1, 'rgba(120,100,80,.6)');
-    if (p.tankT <= 0) { p.tankT = 0; p.tankCD = TANK_CD; p.inv = Math.max(p.inv, 50); beep(160, .3, 'triangle', .05, -80); }
+    if (p.tankT <= 0) { p.tankT = 0; p.tankCD = tankCd(); p.inv = Math.max(p.inv, 50); beep(160, .3, 'triangle', .05, -80); }
   }
   obstacles = obstacles.filter(o => !o.dead);
   for (const o of obstacles) {
@@ -2108,7 +2131,7 @@ function drawMech(p) {
   if (sel === 0 && p.flash > 0) { ctx.fillStyle = 'rgba(255,230,140,.95)'; ctx.beginPath(); ctx.arc(x + 98, mgY, 8 + Math.random() * 5, 0, 7); ctx.fill(); }
   if (sel === 2 && p.flash > 0) { ctx.fillStyle = 'rgba(255,200,120,.9)'; ctx.beginPath(); ctx.arc(x - 24, y - 126, 8 + Math.random() * 4, 0, 7); ctx.fill(); }
   // armor pips
-  for (let k = 0; k < MECH_HP; k++) { ctx.fillStyle = k < p.mechHP ? '#6dffb0' : 'rgba(0,0,0,.5)'; ctx.fillRect(x - 24 + k * 10, y - 130, 8, 5); }
+  for (let k = 0; k < mechHpMax(); k++) { ctx.fillStyle = k < p.mechHP ? '#6dffb0' : 'rgba(0,0,0,.5)'; ctx.fillRect(x - 24 + k * 10, y - 130, 8, 5); }
   ctx.restore();
 }
 function drawPlayer(p) {
@@ -2512,19 +2535,19 @@ function render() {
     if ($mw.textContent !== mwl) $mw.textContent = mwl;
     if ($mw.style.display !== mwd) $mw.style.display = mwd; }
   if (has('rocketshoes') && state === 'play') {
-    const ry = (save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114) + (canTank() ? 16 : 0) + (has('mech') ? 16 : 0), rf = Math.max(0, player.rfuel) / RFUEL;
+    const ry = (save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114) + (canTank() ? 16 : 0) + (has('mech') ? 16 : 0), rf = Math.max(0, player.rfuel) / rfMax();
     ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, ry, 150, 10); ctx.fillStyle = player.boost ? '#ffb347' : rf > .25 ? '#ff8a2e' : '#d9534f'; ctx.fillRect(18, ry, 150 * rf, 10);
     hudTxt('👟 BOOST: hold jump in air', 174, ry - 3, 13);
   }
   if (has('mech') && state === 'play') {
     const my = (save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114) + (canTank() ? 16 : 0), mReady = !player.mechT && !player.mechCD;
-    const mf = player.mechT > 0 ? player.mechT / MECH_TIME : 1 - player.mechCD / MECH_CD;
+    const mf = player.mechT > 0 ? player.mechT / mechTime() : 1 - player.mechCD / mechCd();
     ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, my, 150, 10); ctx.fillStyle = player.mechT > 0 ? '#7fb2ff' : mReady ? '#6dffb0' : '#7a8aa8'; ctx.fillRect(18, my, 150 * mf, 10);
-    hudTxt(player.mechT > 0 ? '🤖 ' + '■'.repeat(Math.max(0, player.mechHP)) + '□'.repeat(MECH_HP - Math.max(0, player.mechHP)) : mReady ? '🤖 PRESS V FOR MECH' : '🤖 ' + Math.ceil(player.mechCD / 60) + 's', 174, my - 3, 13);
+    hudTxt(player.mechT > 0 ? '🤖 ' + '■'.repeat(Math.max(0, player.mechHP)) + '□'.repeat(mechHpMax() - Math.max(0, player.mechHP)) : mReady ? '🤖 PRESS V FOR MECH' : '🤖 ' + Math.ceil(player.mechCD / 60) + 's', 174, my - 3, 13);
   }
   if (canTank() && state === 'play') {
     const ty = save.hero === 'astronaut' ? 154 : anyOP() ? 138 : 114, tReady = !player.tankT && !player.tankCD;
-    const tf = player.tankT > 0 ? player.tankT / TANK_TIME : 1 - player.tankCD / TANK_CD;
+    const tf = player.tankT > 0 ? player.tankT / tankTime() : 1 - player.tankCD / tankCd();
     ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(18, ty, 150, 10); ctx.fillStyle = player.tankT > 0 ? '#9be36a' : tReady ? '#6dffb0' : '#7a8aa8'; ctx.fillRect(18, ty, 150 * tf, 10);
     hudTxt(player.tankT > 0 ? '🛡️ TANK ' + Math.ceil(player.tankT / 60) + 's' : tReady ? '🛡️ PRESS T FOR TANK' : '🛡️ ' + Math.ceil(player.tankCD / 60) + 's', 174, ty - 3, 13);
   }
