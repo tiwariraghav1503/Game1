@@ -35,6 +35,9 @@
   #mvr{left:calc(3cqw + 17cqh)}
   #fire:active{transform:translateY(.6cqh)}
   #btns{display:flex;gap:1.6cqw;align-items:center;flex-wrap:wrap}
+  #bossBtn{font:inherit;font-weight:800;font-size:3.6cqh;padding:1.2cqh 2.4cqh;border:0;border-radius:99px;background:linear-gradient(#ff8a8a,#e04848);color:#2a0505;cursor:pointer;box-shadow:0 .6cqh 0 #8f1f1f}
+  #bossBtn:active{transform:translateY(.5cqh)}
+  #bossBtn:disabled{filter:grayscale(.8);opacity:.6;cursor:default}
   #dailyBtn,#shareBtn{font:inherit;font-weight:800;font-size:3.6cqh;padding:1.2cqh 2.4cqh;border:0;border-radius:99px;background:linear-gradient(#ffb36e,#f2742f);color:#3a1500;cursor:pointer;box-shadow:0 .6cqh 0 #a8480f}
   #shareBtn{display:none;background:linear-gradient(#a8ffcf,#34c98a);color:#04281a;box-shadow:0 .6cqh 0 #1a8a5e}
   #dailyBtn:active,#shareBtn:active{transform:translateY(.5cqh)}
@@ -131,7 +134,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
-        <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button><button id="dailyBtn">DAILY 📅</button><button id="shareBtn">SHARE SCORE</button></div>
+        <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button><button id="bossBtn">BOSSES ⚔️</button><button id="dailyBtn">DAILY 📅</button><button id="shareBtn">SHARE SCORE</button></div>
         <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank &nbsp;·&nbsp; hold jump in the air = rocket shoes (shop) &nbsp;·&nbsp; V = battle mech (shop; Q / 1-3 / button = switch its weapon) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
       </div>
@@ -482,7 +485,7 @@ function drawWheel() {
 const ease = t => 1 - Math.pow(1 - t, 4);
 function spinWheel() {
   if (state === 'spinning') return;
-  state = 'spinning'; $btn.disabled = true; $shopBtn.disabled = true; $result.textContent = ''; wheelWin = -1;
+  state = 'spinning'; $btn.disabled = true; $shopBtn.disabled = true; document.getElementById('bossBtn').disabled = true; $result.textContent = ''; wheelWin = -1;
   beep(300, .15, 'sawtooth', .04, 400);
   const idx = Math.floor(rng() * N);
   const rolled = rng() < .6 ? MODS[Math.floor(rng() * MODS.length)] : null;
@@ -520,7 +523,7 @@ function startLevel() {
 }
 
 function showOverlay(title, text, btn) {
-  $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false;
+  $title.textContent = title; $text.textContent = text; $btn.textContent = btn; $btn.disabled = false; $shopBtn.disabled = false; document.getElementById('bossBtn').disabled = false;
   $result.textContent = ''; wheelWin = -1;
   overlay.classList.remove('hidden');
   musicPlay('Title');
@@ -964,9 +967,10 @@ function renderShop() {
   }).join('') + '</div>';
 }
 document.querySelector('#shophead').addEventListener('click', e => { const t = e.target.dataset && e.target.dataset.tab; if (t) { shopTab = t; $msg.textContent = ''; renderShop(); } });
-function openShop() { if ($shopBtn.disabled) return; renderShop(); $shop.classList.remove('hidden'); }
+function openShop(tab) { if ($shopBtn.disabled) return; if (typeof tab === 'string') { shopTab = tab; $msg.textContent = ''; } renderShop(); $shop.classList.remove('hidden'); }
 function closeShop() { $shop.classList.add('hidden'); renderPicker(); }
-$shopBtn.addEventListener('click', openShop);
+$shopBtn.addEventListener('click', () => openShop('gear'));
+document.getElementById('bossBtn').addEventListener('click', () => openShop('bosses'));
 document.getElementById('shopclose').addEventListener('click', closeShop);
 addEventListener('keydown', e => { if (e.code === 'Escape') closeShop(); });
 $items.addEventListener('click', e => {
