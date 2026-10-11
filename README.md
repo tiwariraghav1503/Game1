@@ -23,6 +23,7 @@ Spin the wheel to pick a level, then run, jump and shoot. Collect 💎 diamonds,
 | Battle mech (switch its weapon: Q / 1–3) | V | MECH |
 | Astronaut jetpack | G or pinch | pinch with two fingers |
 | Switch hero (title and crash screens) | H, [ ], ← → | ◀ ▶ buttons |
+| Pause (opens the Bosses tab, so you can fight a boss any time) | P | ⏸ button |
 | Music / sound effects | M / N | 🎵 / 🔊 buttons |
 
 ## What's in it
@@ -31,7 +32,7 @@ Spin the wheel to pick a level, then run, jump and shoot. Collect 💎 diamonds,
 - Checkpoints inside each level, with retries
 - Combos, near-miss bonuses and power-up orbs
 - 7 weapons, armor, 6 heroes, rocket shoes, a battle tank and a battle mech
-- Bosses with arena fights, minions and overpowered weapon drops. The shop's BOSSES tab lets you buy each boss weapon outright or fight any boss on purpose, at three difficulty tiers
+- Bosses with arena fights, minions and overpowered weapon drops. The shop's BOSSES tab lets you buy each boss weapon outright or fight any boss on purpose, at three difficulty tiers: from the title screen, between levels, or mid-level by pausing (P)
 - Daily missions and a daily challenge (same levels for everyone on a given date), with a share button
 - Progress is saved in your browser; there's a reset button on the title screen, and it can be undone once
 
