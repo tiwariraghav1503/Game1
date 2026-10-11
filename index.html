@@ -34,6 +34,11 @@
   #mvl{left:3cqw}
   #mvr{left:calc(3cqw + 17cqh)}
   #fire:active{transform:translateY(.6cqh)}
+  #diffrow{display:flex;align-items:center;flex-wrap:wrap;gap:.6cqh 1.2cqw;font-size:3.2cqh}
+  #diffrow label{font-weight:800;opacity:.85}
+  #diff{font:inherit;font-weight:800;font-size:3.4cqh;padding:.7cqh 1.4cqh;border-radius:1.4cqh;border:.3cqh solid rgba(255,255,255,.35);background:#1a1f38;color:#fff;cursor:pointer}
+  #diff:disabled{opacity:.5;cursor:default}
+  #difftext{flex-basis:100%;font-size:2.3cqh;opacity:.7;line-height:1.2}
   #btns{display:flex;gap:1.6cqw;align-items:center;flex-wrap:wrap}
   #bossBtn{font:inherit;font-weight:800;font-size:3.6cqh;padding:1.2cqh 2.4cqh;border:0;border-radius:99px;background:linear-gradient(#ff8a8a,#e04848);color:#2a0505;cursor:pointer;box-shadow:0 .6cqh 0 #8f1f1f}
   #bossBtn:active{transform:translateY(.5cqh)}
@@ -144,6 +149,7 @@
         <p id="ptext"></p>
         <p id="result"></p>
         <div id="heropick"><button class="arr" id="hprev" aria-label="Previous hero">◀</button><canvas id="hport" width="80" height="110"></canvas><div id="hname"><b></b><small></small></div><button class="arr" id="hnext" aria-label="Next hero">▶</button></div>
+        <div id="diffrow"><label for="diff">Level type</label><select id="diff"><option value="peaceful">🌸 Peaceful</option><option value="easy">🙂 Easy</option><option value="hard">🔥 Hard</option><option value="impossible">💀 Impossible</option></select><small id="difftext"></small></div>
         <div id="btns"><button id="btn">SPIN</button><button id="shopBtn">SHOP 💎</button><button id="bossBtn">BOSSES ⚔️</button><button id="dailyBtn">DAILY 📅</button><button id="shareBtn">SHARE SCORE</button></div>
         <div id="rstrow"><button id="resetBtn">RESET TO LEVEL 1</button><button id="restoreBtn">RESTORE ERASED PROGRESS</button></div>
         <div id="keys">Space / ↑ = jump &nbsp;·&nbsp; ↓ = slide &nbsp;·&nbsp; ← → = move (boss fights) &nbsp;·&nbsp; F / X = attack &nbsp;·&nbsp; Q or 1-9, 0, - = switch weapon &nbsp;·&nbsp; H / [ ] / ← → on this screen = switch hero &nbsp;·&nbsp; E = dash (boss perk) &nbsp;·&nbsp; T = battle tank &nbsp;·&nbsp; hold jump in the air = rocket shoes (shop) &nbsp;·&nbsp; V = battle mech (shop; Q / 1-3 / button = switch its weapon) &nbsp;·&nbsp; touch: tap top = jump, hold bottom = slide, FIRE / SWAP buttons</div>
@@ -163,7 +169,7 @@
 const W = 900, H = 420, GROUND = 340;
 const cv = document.getElementById('game');
 let ctx = cv.getContext('2d');
-const mainCtx = ctx, BUILD = 'build 30';
+const mainCtx = ctx, BUILD = 'build 31';
 // Older browsers lack roundRect; the game draws with it everywhere, so provide a fallback.
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
@@ -194,7 +200,15 @@ const LEVELS = [
   {name:'Turbo',   icon:'⚡', wheel:'#ff3d9a', sky:['#1a0033','#ff2d95'], ground:'#1b1b2f', dirt:'#0f0f1c', bg:'stripes',   far:'#4d0a60', speed:11,  g:.8,  jv:-15,  ground_:['crystal','crate'],  air:'drone', airP:.3,  mult:2, text:'Maximum speed. Double points!'},
 ];
 const LEVEL_FRAMES = 60 * 60;   // ~60 s per wheel spin
-const CHECKPOINTS = [.25, .5, .75], MAX_RETRIES = 3;   // flags on the progress bar; a crash rewinds to the last one
+// Difficulty: chosen from the drop-down on the title screen, applied to every level of the run.
+const DIFFS = {
+  peaceful:  {icon:'🌸', name:'Peaceful',   speed:.8,   gap:1.8, dens:1.25, enemy:1, air:0, pat:.2,   solidOnly:true, retries:99, armorBonus:2, boss:.6, gems:.6, score:.5, text:'No flying or moving enemies, slower and sparser obstacles, unlimited retries, +2 armor. Rewards x0.6.'},
+  easy:      {icon:'🙂', name:'Easy',       speed:1,    gap:1,   dens:1,    enemy:1,   air:1, pat:.38,   retries:4,  armorBonus:0, boss:1,  gems:1,  score:1,  text:'The standard game, with a spare retry (4).'},
+  hard:      {icon:'🔥', name:'Hard',       speed:1.25, gap:.6,  dens:.92, enemy:1.3, air:1.4, pat:.6, retries:2,  armorBonus:0, boss:1.4, gems:1.5, score:1.5, text:'Faster, denser, more flyers, 2 retries, bosses with 40% more health. Rewards x1.5.'},
+  impossible:{icon:'💀', name:'Impossible', speed:1.7,  gap:.2,  dens:.62, enemy:1.8, air:2,   pat:.9, retries:0,  noArmor:true,   boss:2.2, gems:3,  score:3,  text:'Very fast and relentless. No retries and armor does nothing. Bosses have 2.2x health. Rewards x3.'},
+};
+const DF = () => (typeof dailyRun !== 'undefined' && dailyRun) ? DIFFS.easy : (DIFFS[save.diff] || DIFFS.easy);   // daily challenges always play on Easy
+const CHECKPOINTS = [.25, .5, .75];   // flags on the progress bar; a crash rewinds to the last one
 
 // ---------------------------------------------------------------- audio
 // Everything is synthesized live with WebAudio: no audio files. sfxBus carries the effects, musBus the music; both can be muted.
@@ -366,14 +380,14 @@ const HEROES = [
   {id:'b_saw',   boss:'saw',   scale:.5,  hand:[28, 50], hbw:15, name:'Chainsaw Fiend', cost:4000, desc:'The ultimate: +1 armor, +40% diamonds, fast melee and reload.',   skin:'#b88a6a', shirt:'#6b3a2a', pants:'#3a2a24', shoe:'#222', hair:'#16121a', armor:1, melee:.6, jump:1.1, gem:1.4, regen:1.3, ammo:2},
 ].map(h => Object.assign({jump:1, grav:1, armor:0, walk:1, ammo:0, regen:1, melee:1, gem:1, magnet:false}, h));
 let save = {gems:0, owned:{}, hero:'runner'};
-try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner', missions:Array.isArray(j.missions) ? j.missions : undefined, day:j.day, dailyBest:j.dailyBest}; } catch (e) {}
+try { const j = JSON.parse(localStorage.getItem('wheelrunner.save') || 'null'); if (j) save = {gems:+j.gems || 0, owned:j.owned || {}, hero:j.hero || 'runner', missions:Array.isArray(j.missions) ? j.missions : undefined, day:j.day, dailyBest:j.dailyBest, diff:DIFFS[j.diff] ? j.diff : undefined}; } catch (e) {}
 if (!HEROES.some(h => h.id === save.hero && (h.cost === 0 || save.owned['hero_' + h.id]))) save.hero = 'runner';
 const CH = () => HEROES.find(h => h.id === save.hero) || HEROES[0];
 const persist = () => { try { localStorage.setItem('wheelrunner.save', JSON.stringify(save)); } catch (e) {} };
 const has = id => !!save.owned[id];
 const canTank = () => has('tank') || !!(player && player.freeTank);
 const ARMOR_VAL = {helmet:1, vest:2, boots:1};
-const armorMax = () => Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), CH().armor);
+const armorMax = () => DF().noArmor ? 0 : Object.keys(ARMOR_VAL).reduce((n, k) => n + (has(k) ? ARMOR_VAL[k] : 0), CH().armor) + (DF().armorBonus || 0);
 const ownsWeapon = w => w.id === 'gun' || has(w.id);   // the Blaster is the free starter weapon
 const anyOP = () => WEAPONS.some(w => w.op && has(w.id));
 const SHOP = [
@@ -402,7 +416,7 @@ const PACKS = [
 ];
 let shopTab = 'gear';
 let gems, runGems, armor, gemLeft, toastMsg = '';
-let retries = MAX_RETRIES, cpTime = 0, cpPassed = 0;
+let retries = 4, cpTime = 0, cpPassed = 0;
 let dailyRun = false, rngBase = 1; const rngSt = {};
 // Daily challenge runs use seeded generators, one stream per kind of event ('s' obstacles, 'g' gems, 'p' pickups, 'w' wheel), so the nth obstacle is the same for everyone even if timing differs.
 const rng = (st = 'w') => {
@@ -448,7 +462,10 @@ function activatePickup(t) {
 }
 function popBubble() { const p = player; p.bubble = false; p.inv = 60; shake = 8; flash = .25; dust(p.x, p.y - 40, 16, 'rgba(110,224,255,.95)'); beep(300, .2, 'sawtooth', .06, -150); floater('SHIELD BROKE', p.x, p.y - 96, '#46d3ff'); }
 let mod = null, gemMult = 1, forceModId;   // forceModId is a test hook
-const applyMod = (base, m) => { const l = Object.assign({}, base); if (m && m.id === 'lowg') { l.g *= .6; l.jv *= .8; } if (m && m.id === 'fast') { l.speed *= 1.25; l.mult *= 2; } return l; };
+const applyMod = (base, m) => {
+  const l = Object.assign({}, base), d = DF();
+  l.speed *= d.speed; l.airP = Math.min(.75, l.airP * d.air); l.mult *= d.score;
+  if (d.solidOnly) { const solid = l.ground_.filter(k => !(k in ENEMY_VX)); if (solid.length) l.ground_ = solid; } if (m && m.id === 'lowg') { l.g *= .6; l.jv *= .8; } if (m && m.id === 'fast') { l.speed *= 1.25; l.mult *= 2; } return l; };
 let boss = null, eps = [], bossBanner = 0, supers = [], pow = 60, minis = [], chip = 0;
 let player, obstacles, particles, dist, score, scoreAcc, levelTime, levelsDone, spawnLeft, speed, shake, flash, clock = 0;
 const keys = {down:false, jump:false, left:false, right:false};
@@ -457,7 +474,7 @@ let touchDown = false, touchJump = false, touchL = false, touchR = false, touchF
 function resetGame() {
   player = {face:1, dj:false, fuel:60, dashCD:0, inv:0, atk:null, x:130, y:GROUND, vy:0, onGround:true, sliding:false, phase:0, dead:false, flyT:0, flyCD:0, tankT:0, tankCD:0, mechT:0, mechCD:0, mechHP:0, mechW:0, rfuel:100, airT:0, boost:false, bubble:false};
   obstacles = []; particles = []; bullets = []; gems = []; runGems = 0; armor = armorMax(); gemLeft = 500; boss = null; eps = []; bossBanner = 0; supers = []; pow = 60; minis = []; chip = 0; setBossUI(); ammo = maxAmmo(); ammoT = 0; fireCD = 0;
-  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = MAX_RETRIES; cpTime = 0; cpPassed = 0; mod = null; gemMult = 1; slowT = 0; x2T = 0; magT = 0; boostT = 0; pkLeft = 480; combo = 0; comboT = 0; bestCombo = 0; gemC = 0; hitThisLevel = false; floaters = []; shake = 0; flash = 0;
+  dist = 0; score = 0; scoreAcc = 0; levelTime = 0; levelsDone = 0; retries = DF().retries; cpTime = 0; cpPassed = 0; mod = null; gemMult = 1; slowT = 0; x2T = 0; magT = 0; boostT = 0; pkLeft = 480; combo = 0; comboT = 0; bestCombo = 0; gemC = 0; hitThisLevel = false; floaters = []; shake = 0; flash = 0;
   spawnLeft = 600; speed = 6;
 }
 resetGame();
@@ -892,7 +909,7 @@ $daily.addEventListener('click', () => {
 });
 $share.addEventListener('click', async () => {
   const url = location.href.split('?')[0] + (dailyRun ? '?daily=1' : '');
-  const txt = (dailyRun ? '📅 Wheel Runner Daily ' + dayKey() : '🎡 Wheel Runner') + ': ' + score + ' pts · ' + levelsDone + ' levels · best combo ' + bestCombo + '\n' + url;
+  const txt = (dailyRun ? '📅 Wheel Runner Daily ' + dayKey() : '🎡 Wheel Runner (' + DF().name + ')') + ': ' + score + ' pts · ' + levelsDone + ' levels · best combo ' + bestCombo + '\n' + url;
   try { if (navigator.share) { await navigator.share({text:txt}); return; } await navigator.clipboard.writeText(txt); $result.textContent = 'Copied! Paste it to a friend.'; }
   catch (e) { try { await navigator.clipboard.writeText(txt); $result.textContent = 'Copied! Paste it to a friend.'; } catch (e2) { window.prompt('Copy your score:', txt); } }
 });
@@ -900,7 +917,14 @@ $share.addEventListener('click', async () => {
 // Hero picker on the title / crash screen: cycle through the heroes you own without opening the shop.
 const $hp = document.getElementById('heropick');
 const ownedHeroes = () => HEROES.filter(h => h.cost === 0 || has('hero_' + h.id));
+function renderDiff() {
+  const sel = document.getElementById('diff'), id = DIFFS[save.diff] ? save.diff : 'easy';
+  sel.value = id; sel.disabled = state !== 'title' && state !== 'over';
+  document.getElementById('difftext').textContent = sel.disabled ? 'Locked until your next run: ' + DIFFS[id].text : DIFFS[id].text;
+}
+document.getElementById('diff').addEventListener('change', e => { save.diff = e.target.value; persist(); renderDiff(); beep(660, .05, 'triangle', .05); });
 function renderPicker() {
+  renderDiff();
   $daily.style.display = state === 'title' || state === 'over' ? 'inline-block' : 'none'; $share.style.display = 'none';
   ensureMissions(); const mo = missionsOpen(); $shopBtn.innerHTML = 'SHOP 💎' + (mo ? ' <small style="font-size:.6em">🎯' + mo + '</small>' : '');
   const can = state === 'title' || state === 'over';          // heroes are locked in for the rest of a run
@@ -1104,7 +1128,7 @@ function startBoss(i, tier) {
   const d = BOSSES[i % BOSSES.length];
   for (const o of obstacles) dust(o.x + o.w / 2, o.y - o.h / 2, 10, 'rgba(255,200,120,.9)');
   obstacles = []; eps = []; bullets = []; gems = []; minis = []; chip = 0;
-  const hp = Math.round(d.hp * (1 + .6 * tier));
+  const hp = Math.round(d.hp * (1 + .6 * tier) * DF().boss);
   boss = {d, tier, x:W + 170, y:GROUND, hp, max:hp, mt:220, t:0, flash:0, hitBy:0, dead:false, dieT:0, sp:0, shots:0, beams:0, charges:0, tx:0, x0:0};
   go(boss, 'enter', 1); bossBanner = 190; setBossUI(); beep(110, .7, 'sawtooth', .08, -40); musicPlay('Boss');
 }
@@ -1117,7 +1141,7 @@ function damageBoss(n) {
 function finishBoss() {
   bossBanner = 0;
   jingle([60, 64, 67, 72, 76, 79], .1, 'square', .06);
-  let reward = 30 + 15 * boss.tier, drop = '';
+  let reward = Math.round((30 + 15 * boss.tier) * DF().gems), drop = '';
   const w = WEAPONS.find(x => x.id === boss.d.drop);
   if (!has(w.id)) { save.owned[w.id] = 1; weapon = WEAPONS.indexOf(w); toast = 120; toastMsg = w.name; drop = w.icon + ' ' + w.name.toUpperCase() + ' unlocked! Perk: ' + w.perk + '. '; refreshButtons(); }
   else { reward += 40; drop = 'Already own the ' + w.name + ': +40 bonus. '; }
@@ -1430,8 +1454,8 @@ function spawnPattern() {
   const solid = level.ground_.filter(k => !(k in ENEMY_VX)), kinds = solid.length ? solid : level.ground_;
   const J = speed * 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);          // horizontal distance of one full jump
   const pick = () => kinds[Math.floor(rng('s') * kinds.length)];
-  const put = (k, x) => { const [w, h] = SIZES[k]; obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:ENEMY_VX[k] || 0}); return w; };
-  const names = ['pair', 'rhythm', 'stairs'].concat(level.air === 'ufo' ? [] : ['gauntlet']).filter(n => n !== lastPat);
+  const put = (k, x) => { const [w, h] = SIZES[k]; obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:(ENEMY_VX[k] || 0) * DF().enemy}); return w; };
+  const names = ['pair', 'rhythm', 'stairs'].concat(level.air === 'ufo' || DF().air === 0 ? [] : ['gauntlet']).filter(n => n !== lastPat);
   const name = forcePat || names[Math.floor(rng('s') * names.length)]; lastPat = name;
   const x0 = W + 60; let x = x0, end = x0;
   const fits = w => w <= .5 * J;                              // everything cleared by one jump must fit in half a jump, so there is room to mistime it
@@ -1468,21 +1492,21 @@ function spawn() {
   } else if (air) {
     const by = level.hiAir && rng('s') < .4 ? GROUND - 98 : GROUND - 34;
     obstacles.push({kind:'air', x:W + 60, y:by, base:level.wob ? by : undefined, amp:level.wob || 0, w:46, h:26, t:rng('s') * 6});
-  } else if (patternsOn && rng('s') < patChance && spawnPattern()) {
+  } else if (patternsOn && rng('s') < (forcePat ? patChance : DF().pat) && spawnPattern()) {
     // a hand-built pattern was placed
   } else {
     const kinds = level.ground_, cluster = rng('s') < .2 ? 2 : 1;
     let x = W + 60;
     for (let i = 0; i < cluster; i++) {
       const k = kinds[Math.floor(rng('s') * kinds.length)], [w, h] = SIZES[k];
-      obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:ENEMY_VX[k] || 0});
+      obstacles.push({kind:k, x, y:GROUND, w, h, t:rng('s') * 6, vx:(ENEMY_VX[k] || 0) * DF().enemy});
       x += w + 2;
     }
     if (rng('s') < .55) { const grp = obstacles.slice(-cluster); gemArc(W + 60, x - W - 62, GROUND - Math.max(...grp.map(g => g.h))); }
   }
   const airtime = 2 * Math.abs(level.jv * CH().jump) / (level.g * CH().grav);
   const gx = level.gapX || [14, 48];
-  spawnLeft = speed * (airtime + gx[0] + rng('s') * (gx[1] - gx[0])) + patSpan; patSpan = 0;
+  spawnLeft = speed * (airtime + (gx[0] + rng('s') * (gx[1] - gx[0])) * DF().gap) * DF().dens + patSpan; patSpan = 0;
 }
 
 function hit(o) {
@@ -1603,7 +1627,7 @@ function update(dt) {
     if (has('magnet') || CH().magnet || magT > 0) { const dx = p.x - g.x, dy = p.y - 30 - g.y, d = Math.hypot(dx, dy) || 1; if (d < 170) { g.x += dx / d * 9 * dt; g.y += dy / d * 9 * dt; } }
     if (g.pk && !g.got && Math.abs(g.x - p.x) < 34 && g.y > p.y - gph - 14 && g.y < p.y + 10) { g.got = true; activatePickup(g.pk); continue; }
     if (!g.pk && !g.got && Math.abs(g.x - p.x) < 26 && g.y > p.y - gph - 10 && g.y < p.y + 6) {
-      g.got = true; const gain = Math.floor(g.v * CH().gem * gemMult * (x2T > 0 ? 2 : 1) + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist(); evt('gems', gain); gemC++; if (combo > 0) comboT = Math.max(comboT, 120); if (gemC >= 3) { gemC = 0; bump(1); }
+      g.got = true; const gain = Math.floor(g.v * CH().gem * gemMult * (x2T > 0 ? 2 : 1) * DF().gems + Math.random()); save.gems += gain; runGems += gain; pow = Math.min(100, pow + g.v); persist(); evt('gems', gain); gemC++; if (combo > 0) comboT = Math.max(comboT, 120); if (gemC >= 3) { gemC = 0; bump(1); }
       beep(g.v > 1 ? 1100 : 880 + Math.min(300, runGems * 6 % 300), .07, 'triangle', .05); dust(g.x, g.y, 3, g.v > 1 ? '#d9a0ff' : '#8ff');
     }
   }
@@ -1721,8 +1745,8 @@ function update(dt) {
   if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss && (levelsDone + 1) % 10 === 0) {
     levelsDone++; evt('levels', 1); if (!hitThisLevel) evt('nohit', 1); const n = levelsDone / 10 - 1; startBoss(n % BOSSES.length, Math.floor(n / BOSSES.length));
   } else if (levelTime >= LEVEL_FRAMES && state === 'play' && !boss) {
-    levelsDone++; evt('levels', 1); if (!hitThisLevel) evt('nohit', 1); retries = Math.min(MAX_RETRIES, retries + 1); state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
-    const bonus = 15 + 5 * levelsDone; save.gems += bonus; runGems += bonus; persist();
+    levelsDone++; evt('levels', 1); if (!hitThisLevel) evt('nohit', 1); retries = Math.min(DF().retries, retries + 1); state = 'wheel'; beep(660, .15); setTimeout(() => beep(990, .25), 140);
+    const bonus = Math.round((15 + 5 * levelsDone) * DF().gems); save.gems += bonus; runGems += bonus; persist();
     showOverlay('LEVEL CLEAR!', 'Level bonus +' + bonus + ' 💎. Spin the wheel to pick your next level.', 'SPIN');
   }
 }
@@ -2424,7 +2448,8 @@ function render() {
     ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(W - 118, 154, 100, 5); ctx.fillStyle = '#ffd23f'; ctx.fillRect(W - 118, 154, 100 * Math.max(0, comboT) / 180, 5);
   }
   if (dailyRun && state !== 'title') hudTxt('📅 DAILY ' + dayKey(), W - 18, 166, 12, 'right');
-  if (state !== 'title') hudTxt('❤ ' + retries + '/' + MAX_RETRIES + ' retries', W - 18, 118, 14, 'right');
+  if (state !== 'title') hudTxt(DF().retries === 0 ? '☠ NO RETRIES' : DF().retries > 50 ? '❤ ∞ retries' : '❤ ' + retries + '/' + DF().retries + ' retries', W - 18, 118, 14, 'right');
+  if (state !== 'title') hudTxt(DF().icon + ' ' + DF().name.toUpperCase(), W - 18, 182, 12, 'right');
   for (let i = 0; i < maxAmmo(); i++) {
     const px = 18 + i * 22; ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(px, 62, 18, 9);
     const f = i < ammo ? 1 : i === ammo ? ammoT / AMMO_REGEN : 0;
@@ -2482,8 +2507,8 @@ function render() {
     if (fx.length && state === 'play') hudTxt(fx.join('   '), 410, 150, 16); }
   if (toast > 0) { toast -= .5; ctx.globalAlpha = Math.min(1, toast / 20); hudTxt(toastMsg.toUpperCase(), 410, 82, 18); ctx.globalAlpha = 1; }
   if (boss && !boss.dead) {
-    for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 176, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
-    hudTxt('CHIP', W - 18, 186, 12, 'right');
+    for (let i = 0; i < CHIP_MAX; i++) { ctx.beginPath(); ctx.arc(W - 22 - i * 15, 204, 5, 0, 7); ctx.fillStyle = i < chip ? '#ff9d2e' : 'rgba(0,0,0,.45)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke(); }
+    hudTxt('CHIP', W - 18, 214, 12, 'right');
   }
   if (boss) {
     const bx = W / 2 - 170, f = Math.max(0, boss.hp / boss.max);
@@ -2517,7 +2542,7 @@ showOverlay('WHEEL RUNNER', 'Run forever. Dodge everything. Spin the wheel to de
 if (/[?&]daily=1/.test(location.search)) $text.textContent = 'A friend shared today\'s daily challenge. Tap DAILY 📅: everyone gets the same levels and obstacles.';
 requestAnimationFrame(frame);
 // test hook
-window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, breakFrame:() => { breakFrame = true; }, get lastError(){return window.__lastError}, get paused(){return paused}, get lvlDone(){return levelsDone}, togglePause, get bossTierSel(){return bossTier}, startBossFight, get dailyRun(){return dailyRun}, get obsSnapshot(){return obstacles.map(o => [o.kind, Math.round(o.x)])}, get missions(){return save.missions}, get missionDay(){return save.day}, mEvt:(k, n) => missionEvt(k, n), setDay:d => { save.day = d; }, ensureMissions, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
+window.__game = {get state(){return state}, get score(){return score}, get level(){return level.name}, spin:primary, jump, startBoss:(i, t) => { state = 'play'; overlay.classList.add('hidden'); startBoss(i, t || 0); }, get boss(){return boss}, setBossHp:n => { if (boss) boss.hp = n; }, godMode:() => { player.inv = 1e9; }, get armor(){return armor}, get hero(){return save.hero}, get minis(){return minis}, get chip(){return chip}, spawnMini:() => spawnMini(), get p(){return player}, get pow(){return pow}, set pow(v){pow=v}, get obstacles(){return obstacles}, get gems(){return gems}, startFly, startTank, startMech, get diffId(){return save.diff}, get diffNow(){return DF().name}, get armorMaxNow(){return armorMax()},  breakFrame:() => { breakFrame = true; }, get lastError(){return window.__lastError}, get paused(){return paused}, get lvlDone(){return levelsDone}, togglePause, get bossTierSel(){return bossTier}, startBossFight, get dailyRun(){return dailyRun}, get obsSnapshot(){return obstacles.map(o => [o.kind, Math.round(o.x)])}, get missions(){return save.missions}, get missionDay(){return save.day}, mEvt:(k, n) => missionEvt(k, n), setDay:d => { save.day = d; }, ensureMissions, setLevel:i => { levelIdx = i; mod = null; level = applyMod(LEVELS[i], null); }, setRetries:n => { retries = n; }, step:n => { for (let i = 0; i < n; i++) { if (state === 'play') update(1); } }, setKeys:(j, d) => { keys.jump = j; keys.down = d; }, set patterns(v){ patternsOn = v; }, set forcePat(v){ forcePat = v; patChance = v ? 1 : .38; }, get retriesLeft(){return retries}, get pl(){return player},  spawnPk:t => { const p = player; gems.push({x:p.x + 8, y:p.y - 40, t:0, v:0, pk:t}); }, get fx(){return {slowT, x2T, magT, boostT, bubble:player.bubble}}, get gemsTotal(){return save.gems}, addGem:(dx, dy) => { const p = player; gems.push({x:p.x + dx, y:p.y - dy, t:0, v:1}); }, get combo(){return combo}, get bestCombo(){return bestCombo}, bump, tookHit, get freezeT(){return freezeT}, get floaters(){return floaters}, forceMod:m => { forceModId = m; }, get gNow(){return level.g}, get jvNow(){return level.jv}, get lvlSpeed(){return level.speed}, get gemMult(){return gemMult}, get modId(){return mod && mod.id}, MODS, get rfuel(){return player.rfuel}, get boost(){return player.boost}, get py(){return player.y}, get mechW(){return player.mechW}, setMechWeapon, cycleMechWeapon, get supers2(){return supers}, get mechT(){return player.mechT}, get mechHP(){return player.mechHP}, get mechCD(){return player.mechCD}, get bullets(){return bullets}, get px(){return player.x}, get bossBox(){return boss && bossBox(boss)}, get bossState(){return boss && boss.st}, get facing(){return player.face}, get speedNow(){return speed}, audio:{get theme(){return mus.theme}, get want(){return mus.want}, get prefs(){return audioPrefs}, get state(){return actx && actx.state}, rms(){ if (!analyser) return -1; const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); let s = 0; for (const v of a) s += v * v; return Math.sqrt(s / a.length); }}, setMusic, setSfx, musicPlay, beep, get retries(){return retries}, get cp(){return cpPassed}, get levelTime(){return levelTime}, set levelTime(v){levelTime=v}, get armorNow(){return armor}, hurt:() => damagePlayer(), clearInv:() => { player.inv = 0; }, get tankT(){return player.tankT}, set hero(v){save.hero=v}, get supers(){return supers}};
 })();
 </script>
 </body>
